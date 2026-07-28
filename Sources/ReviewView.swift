@@ -58,6 +58,7 @@ struct ReviewView: View {
         .onDisappear {
             keyMonitor?.stop()
             keyMonitor = nil
+            QuickLookController.shared.close()
         }
     }
 
@@ -107,8 +108,24 @@ struct ReviewView: View {
         case "x":
             moveSelection(to: .reject)
             return true
+        case " ":
+            QuickLookController.shared.toggle(urls: selectedURLs())
+            return true
         default:
             return false
+        }
+    }
+
+    /// URLs of the currently-selected items in whichever column was last
+    /// interacted with.
+    private func selectedURLs() -> [URL] {
+        switch focusedColumn {
+        case .picks:
+            return appState.picks.filter { pickSelection.contains($0.id) }.map { $0.url }
+        case .rejects:
+            return appState.rejects.filter { rejectSelection.contains($0.id) }.map { $0.url }
+        case nil:
+            return []
         }
     }
 
@@ -137,15 +154,7 @@ struct ReviewView: View {
     }
 
     private func copySelection() {
-        let urls: [URL]
-        switch focusedColumn {
-        case .picks:
-            urls = appState.picks.filter { pickSelection.contains($0.id) }.map { $0.url }
-        case .rejects:
-            urls = appState.rejects.filter { rejectSelection.contains($0.id) }.map { $0.url }
-        case nil:
-            urls = []
-        }
+        let urls = selectedURLs()
         guard !urls.isEmpty else { return }
         FilePasteboard.copy(urls: urls)
         lastCopyFeedback = "Copied \(urls.count) file\(urls.count == 1 ? "" : "s")"

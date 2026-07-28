@@ -43,6 +43,12 @@ enum CLI {
       Cmd+Return Submit now (undecided images become rejects)
       Esc/Cmd+W  Exit (confirms if images are still undecided)
       Cmd+Q      Quit immediately
+
+    Review screen:
+      p / x      Move the selected images to Picks / Rejects
+      Space      Preview the selected images with Quick Look
+      Cmd+A      Select all in the focused column
+      Cmd+C      Copy the selected images as files
     """
 
     /// Parses CommandLine.arguments (excluding the executable name) and either

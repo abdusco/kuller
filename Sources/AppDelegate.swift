@@ -6,10 +6,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Borderless windows can't become key/main by default, which would silently
-/// swallow all keyboard input (p/x/j/k/arrows/Cmd+Enter/etc). Override to
-/// keep keyboard handling working with no title bar.
-final class BorderlessKeyWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+/// Routes the canvas window's red close button through the same
+/// pending-images confirmation as Esc/Cmd+W, instead of just closing.
+final class CanvasWindowDelegate: NSObject, NSWindowDelegate {
+    let appState: AppState
+
+    init(appState: AppState) {
+        self.appState = appState
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        confirmExitIfNeeded(appState: appState)
+    }
 }

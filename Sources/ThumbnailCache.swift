@@ -49,6 +49,19 @@ final class ThumbnailCache {
         }
     }
 
+    /// Reads just the pixel dimensions from an image's metadata, without
+    /// decoding it — fast enough to call synchronously (e.g. to size a
+    /// window before the full image has loaded).
+    static func quickPixelSize(of url: URL) -> CGSize? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = properties[kCGImagePropertyPixelWidth] as? CGFloat,
+              let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
+            return nil
+        }
+        return CGSize(width: width, height: height)
+    }
+
     private static func downsample(url: URL, maxPixelSize: CGFloat) -> NSImage? {
         let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
         guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {

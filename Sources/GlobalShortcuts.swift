@@ -16,18 +16,23 @@ func handleGlobalShortcuts(_ event: NSEvent, appState: AppState) -> Bool {
     let isCmdW = modifiers.contains(.command) && characters == "w"
     let isEscape = event.keyCode == escapeKeyCode
     if isCmdW || isEscape {
-        requestExit(appState: appState)
+        if confirmExitIfNeeded(appState: appState) {
+            NSApp.terminate(nil)
+        }
         return true
     }
 
     return false
 }
 
-private func requestExit(appState: AppState) {
+/// Returns true if it's fine to proceed with exiting/closing now — either
+/// nothing is pending, or the user confirmed discarding pending images via
+/// the alert. Shared by the Esc/Cmd+W shortcut and the canvas window's own
+/// close-button handling, so both paths behave the same way.
+func confirmExitIfNeeded(appState: AppState) -> Bool {
     let pendingCount = appState.items.count - appState.decisions.count
     guard pendingCount > 0, appState.phase == .culling else {
-        NSApp.terminate(nil)
-        return
+        return true
     }
 
     let alert = NSAlert()
@@ -36,7 +41,5 @@ private func requestExit(appState: AppState) {
     alert.informativeText = "Images you haven't picked or rejected yet will be left undecided."
     alert.addButton(withTitle: "Quit")
     alert.addButton(withTitle: "Cancel")
-    if alert.runModal() == .alertFirstButtonReturn {
-        NSApp.terminate(nil)
-    }
+    return alert.runModal() == .alertFirstButtonReturn
 }
