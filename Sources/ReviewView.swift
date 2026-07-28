@@ -48,7 +48,7 @@ struct ReviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(white: 0.16))
+        .background(Color.black.opacity(0.2))
         .onAppear {
             configureCoordinators()
             keyMonitor = KeyMonitor { event in
@@ -83,20 +83,56 @@ struct ReviewView: View {
             return true
         }
 
-        guard event.modifierFlags.contains(.command),
-              let characters = event.charactersIgnoringModifiers?.lowercased() else {
+        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
             return false
         }
 
+        if event.modifierFlags.contains(.command) {
+            switch characters {
+            case "c":
+                copySelection()
+                return true
+            case "a":
+                selectAllInFocusedColumn()
+                return true
+            default:
+                return false
+            }
+        }
+
         switch characters {
-        case "c":
-            copySelection()
+        case "p":
+            moveSelection(to: .pick)
             return true
-        case "a":
-            selectAllInFocusedColumn()
+        case "x":
+            moveSelection(to: .reject)
             return true
         default:
             return false
+        }
+    }
+
+    /// Moves the currently-selected images (in whichever column was last
+    /// interacted with) to the other group, like dragging them across.
+    private func moveSelection(to decision: Decision) {
+        let ids: [UUID]
+        switch focusedColumn {
+        case .picks:
+            ids = Array(pickSelection)
+        case .rejects:
+            ids = Array(rejectSelection)
+        case nil:
+            ids = []
+        }
+        guard !ids.isEmpty else { return }
+        appState.setDecision(ids: ids, to: decision)
+        switch focusedColumn {
+        case .picks:
+            pickSelection = []
+        case .rejects:
+            rejectSelection = []
+        case nil:
+            break
         }
     }
 

@@ -3,11 +3,12 @@ import SwiftUI
 import Combine
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let images = CLI.run(arguments: arguments) else {
+guard let cliResult = CLI.run(arguments: arguments) else {
     exit(0)
 }
 
-let appState = AppState(items: images)
+let appState = AppState(items: cliResult.images)
+let copyPicksToURL = cliResult.copyPicksTo
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
@@ -82,12 +83,18 @@ sidebarWindow.contentView = sidebarHostingView
 sidebarWindow.orderFront(nil)
 
 // The sidebar only makes sense during culling; hide it on the review screen.
+// If --copy-picks-to was given, skip the review screen entirely: copy picks
+// straight to that directory and quit as soon as culling is done.
 var sidebarPhaseObserver: AnyCancellable? = appState.$phase.sink { phase in
     switch phase {
     case .culling:
         sidebarWindow.orderFront(nil)
     case .review:
         sidebarWindow.orderOut(nil)
+        if let destination = copyPicksToURL {
+            PicksExport.copyPicks(appState.picks, to: destination)
+            NSApp.terminate(nil)
+        }
     }
 }
 

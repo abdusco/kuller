@@ -211,7 +211,7 @@ struct ImageGridView: NSViewRepresentable {
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
-        collectionView.backgroundColors = [NSColor(white: 0.16, alpha: 1)]
+        collectionView.backgroundColors = [NSColor.black.withAlphaComponent(0.2)]
         collectionView.register(ThumbnailCollectionViewItem.self, forItemWithIdentifier: .thumbnailItem)
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
@@ -223,7 +223,7 @@ struct ImageGridView: NSViewRepresentable {
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
         scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor(white: 0.16, alpha: 1)
+        scrollView.backgroundColor = NSColor.black.withAlphaComponent(0.2)
         scrollView.documentView = collectionView
 
         NSLayoutConstraint.activate([
