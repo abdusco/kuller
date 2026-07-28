@@ -211,7 +211,10 @@ struct ImageGridView: NSViewRepresentable {
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
-        collectionView.backgroundColors = [NSColor.black.withAlphaComponent(0.2)]
+        // Fully transparent: ReviewView paints one translucent backdrop behind
+        // the whole screen. Tinting here too would stack a second layer over
+        // it, making the grids visibly darker than the toolbar and headers.
+        collectionView.backgroundColors = [.clear]
         collectionView.register(ThumbnailCollectionViewItem.self, forItemWithIdentifier: .thumbnailItem)
         collectionView.dataSource = context.coordinator
         collectionView.delegate = context.coordinator
@@ -222,8 +225,9 @@ struct ImageGridView: NSViewRepresentable {
 
         let scrollView = NSScrollView()
         scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = NSColor.black.withAlphaComponent(0.2)
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+        scrollView.contentView.drawsBackground = false
         scrollView.documentView = collectionView
 
         NSLayoutConstraint.activate([
