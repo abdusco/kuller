@@ -26,20 +26,33 @@ func handleGlobalShortcuts(_ event: NSEvent, appState: AppState) -> Bool {
 }
 
 /// Returns true if it's fine to proceed with exiting/closing now — either
-/// nothing is pending, or the user confirmed discarding pending images via
-/// the alert. Shared by the Esc/Cmd+W shortcut and the canvas window's own
-/// close-button handling, so both paths behave the same way.
+/// there's nothing to lose, or the user confirmed discarding it via the alert.
+/// Shared by the Esc/Cmd+W shortcut and the canvas window's own close-button
+/// handling, so both paths behave the same way.
 func confirmExitIfNeeded(appState: AppState) -> Bool {
-    let pendingCount = appState.items.count - appState.decisions.count
-    guard pendingCount > 0, appState.phase == .culling else {
-        return true
-    }
-
     let alert = NSAlert()
     alert.alertStyle = .warning
-    alert.messageText = "Quit with \(pendingCount) image\(pendingCount == 1 ? "" : "s") left to review?"
-    alert.informativeText = "Images you haven't picked or rejected yet will be left undecided."
+
+    switch appState.phase {
+    case .culling:
+        let pendingCount = appState.items.count - appState.decisions.count
+        guard pendingCount > 0 else { return true }
+        alert.messageText = "Quit with \(pendingCount) image\(pendingCount == 1 ? "" : "s") left to review?"
+        alert.informativeText = "Images you haven't picked or rejected yet will be left undecided."
+    case .review:
+        // Every image is decided here, so the old pending-count test never
+        // fired and Esc quit outright — throwing away the whole sort, which
+        // only exists in memory until the files are copied somewhere.
+        let pickCount = appState.picks.count
+        let rejectCount = appState.rejects.count
+        alert.messageText = "Quit and discard this sort?"
+        alert.informativeText = "\(pickCount) pick\(pickCount == 1 ? "" : "s"), \(rejectCount) reject\(rejectCount == 1 ? "" : "s")."
+    }
+
     alert.addButton(withTitle: "Quit")
     alert.addButton(withTitle: "Cancel")
+    // Esc should cancel the alert rather than confirm the quit it's asking
+    // about; without this the second button isn't wired to Esc.
+    alert.buttons.last?.keyEquivalent = "\u{1b}"
     return alert.runModal() == .alertFirstButtonReturn
 }

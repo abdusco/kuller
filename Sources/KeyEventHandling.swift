@@ -14,6 +14,13 @@ final class KeyMonitor {
         self.handler = handler
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
+            // A modal alert runs its own event loop, but local monitors keep
+            // firing during it. Without this, the Esc that dismisses the quit
+            // confirmation is also seen as another exit request, stacking a
+            // fresh alert behind the one just closed.
+            if NSApp.modalWindow != nil {
+                return event
+            }
             if self.handler(event) {
                 return nil
             }
