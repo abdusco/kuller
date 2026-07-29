@@ -167,9 +167,14 @@ func configureWindowChrome(for phase: AppPhase) {
     case .culling:
         canvasWindow.styleMask.insert(.fullSizeContentView)
         canvasWindow.titlebarAppearsTransparent = true
+        canvasWindow.appearance = nil
     case .review:
         canvasWindow.styleMask.remove(.fullSizeContentView)
         canvasWindow.titlebarAppearsTransparent = false
+        // The review screen paints its own near-black backdrop, so force dark
+        // appearance: under the system light appearance the labels and the
+        // button render near-black on near-black and vanish.
+        canvasWindow.appearance = NSAppearance(named: .darkAqua)
         // Undo any leftover fade from hovering out during culling.
         canvasWindow.standardWindowButton(.closeButton)?.superview?.alphaValue = 1
     }
