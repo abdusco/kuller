@@ -19,7 +19,9 @@ struct CLIResult {
 }
 
 enum CLI {
-    static let version = "0.1.0"
+    /// Supplied by build.sh via a generated Version.swift ("dev" for local
+    /// builds, the release tag in CI).
+    static let version = kullerVersion
 
     static let usage = """
     Usage: kuller [--help] [--version] [--copy-picks-to <dir>] <path> [path ...]
