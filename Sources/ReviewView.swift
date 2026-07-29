@@ -48,7 +48,7 @@ struct ReviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.2))
+        .background(Color.black.opacity(0.8))
         .onAppear {
             configureCoordinators()
             keyMonitor = KeyMonitor { event in
@@ -109,10 +109,37 @@ struct ReviewView: View {
             moveSelection(to: .reject)
             return true
         case " ":
-            QuickLookController.shared.toggle(urls: selectedURLs())
+            previewSelection()
             return true
         default:
             return false
+        }
+    }
+
+    /// Quick Look, matching Finder: previewing a single image lets the arrow
+    /// keys walk the whole column from there, while previewing a multi-image
+    /// selection stays within that selection.
+    private func previewSelection() {
+        let selected = selectedURLs()
+        guard !selected.isEmpty else { return }
+
+        if selected.count == 1, let index = columnURLs().firstIndex(of: selected[0]) {
+            QuickLookController.shared.toggle(urls: columnURLs(), startIndex: index)
+        } else {
+            QuickLookController.shared.toggle(urls: selected)
+        }
+    }
+
+    /// Every item in whichever column was last interacted with, in display
+    /// order.
+    private func columnURLs() -> [URL] {
+        switch focusedColumn {
+        case .picks:
+            return appState.picks.map { $0.url }
+        case .rejects:
+            return appState.rejects.map { $0.url }
+        case nil:
+            return []
         }
     }
 

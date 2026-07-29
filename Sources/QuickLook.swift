@@ -9,9 +9,10 @@ final class QuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPa
 
     private var urls: [URL] = []
 
-    /// Space toggles: opens the panel for `urls`, or closes it if it's
-    /// already up.
-    func toggle(urls: [URL]) {
+    /// Space toggles: opens the panel showing `urls` starting at
+    /// `startIndex`, or closes it if it's already up. Passing more than one
+    /// URL is what makes the panel's arrow-key navigation work.
+    func toggle(urls: [URL], startIndex: Int = 0) {
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             panel.orderOut(nil)
@@ -21,6 +22,10 @@ final class QuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPa
         self.urls = urls
         panel.makeKeyAndOrderFront(nil)
         panel.reloadData()
+        // Must come after reloadData, or the panel has no items to index into.
+        if urls.indices.contains(startIndex) {
+            panel.currentPreviewItemIndex = startIndex
+        }
     }
 
     func close() {
