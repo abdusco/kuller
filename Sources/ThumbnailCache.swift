@@ -11,6 +11,8 @@ final class ThumbnailCache {
     private let thumbnailCache = NSCache<NSURL, NSImage>()
     private let fullImageCache = NSCache<NSURL, NSImage>()
     private let queue = DispatchQueue(label: "kuller.thumbnail-cache", attributes: .concurrent)
+    private var aspectRatios: [URL: CGFloat] = [:]
+    private let aspectLock = NSLock()
 
     private init() {
         thumbnailCache.countLimit = 2000
@@ -47,6 +49,37 @@ final class ThumbnailCache {
                 completion(image)
             }
         }
+    }
+
+    /// Width / height of an image, from metadata only. Cached and answered
+    /// synchronously on repeat calls so the thumbnail strip can lay out
+    /// variable-height rows without re-reading files while scrolling.
+    func aspectRatio(for url: URL, completion: @escaping (CGFloat) -> Void) {
+        if let cached = cachedAspectRatio(for: url) {
+            completion(cached)
+            return
+        }
+        queue.async {
+            let size = Self.quickPixelSize(of: url)
+            let ratio: CGFloat
+            if let size = size, size.width > 0, size.height > 0 {
+                ratio = size.width / size.height
+            } else {
+                ratio = 4.0 / 3.0
+            }
+            self.aspectLock.lock()
+            self.aspectRatios[url] = ratio
+            self.aspectLock.unlock()
+            DispatchQueue.main.async {
+                completion(ratio)
+            }
+        }
+    }
+
+    func cachedAspectRatio(for url: URL) -> CGFloat? {
+        aspectLock.lock()
+        defer { aspectLock.unlock() }
+        return aspectRatios[url]
     }
 
     /// Reads just the pixel dimensions from an image's metadata, without
