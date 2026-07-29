@@ -20,6 +20,14 @@ installMainMenu()
 let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1400, height: 900)
 let defaultReviewSize = NSSize(width: 1100, height: 750)
 
+/// Smallest the review window may get: exactly one thumbnail column per side
+/// (any narrower and NSCollectionViewFlowLayout has no valid layout and logs
+/// about it), plus enough height for the toolbar, both headers and one row.
+let reviewMinWindowSize = NSSize(
+    width: ImageGridMetrics.minimumColumnWidth * 2 + 1,
+    height: 40 + 40 + ImageGridMetrics.itemSize.height + ImageGridMetrics.inset * 2 + 28
+)
+
 /// Fits `imageSize` within a comfortable fraction of the screen, preserving
 /// its aspect ratio.
 func fittedWindowSize(forImageSize imageSize: CGSize) -> NSSize {
@@ -73,6 +81,12 @@ canvasWindow.hasShadow = true
 /// center) and locks manual edge-resizing to that aspect ratio too.
 func resizeCanvasWindow(toImageSize imageSize: CGSize) {
     guard imageSize.width > 0, imageSize.height > 0 else { return }
+    // An image decode started during culling can finish after the review
+    // screen has taken over the window. Applying it then re-locked the review
+    // window to the image's aspect ratio and dropped its minimum size back to
+    // the tiny culling one, which is how review could be squashed to a sliver.
+    guard appState.phase == .culling else { return }
+    canvasWindow.minSize = NSSize(width: 120, height: 90)
     canvasWindow.aspectRatio = imageSize
     let newSize = fittedWindowSize(forImageSize: imageSize)
     let center = CGPoint(x: canvasWindow.frame.midX, y: canvasWindow.frame.midY)
@@ -120,7 +134,12 @@ func scaleCanvasWindow(byFactor factor: CGFloat) {
 /// Switches the canvas back to a normal, freely-resizable window for the
 /// review screen (no image to lock the aspect ratio to).
 func resizeCanvasWindowForReview() {
-    canvasWindow.aspectRatio = .zero
+    // Clear the aspect-ratio lock by setting resizeIncrements, which AppKit
+    // documents as mutually exclusive with it. Assigning .zero to aspectRatio
+    // instead leaves the constraint installed with a degenerate ratio, and
+    // dragging an edge then divides by it and traps on the resulting frame.
+    canvasWindow.resizeIncrements = NSSize(width: 1, height: 1)
+    canvasWindow.minSize = reviewMinWindowSize
     let center = CGPoint(x: visibleFrame.midX, y: visibleFrame.midY)
     let newFrame = NSRect(
         x: center.x - defaultReviewSize.width / 2,
@@ -135,6 +154,11 @@ let canvasWindowDelegate = CanvasWindowDelegate(appState: appState)
 canvasWindow.delegate = canvasWindowDelegate
 
 let canvasHostingView = HoverTrackingHostingView(rootView: RootView(appState: appState))
+// NSHostingView otherwise pushes the SwiftUI content's own measurements into
+// the window as contentMinSize/contentMaxSize, which silently overrides the
+// window's minSize and (during culling) fights the aspect-ratio lock. All
+// sizing here is driven from the window side, so opt out entirely.
+canvasHostingView.sizingOptions = []
 canvasHostingView.wantsLayer = true
 canvasHostingView.layer?.backgroundColor = NSColor.clear.cgColor
 canvasHostingView.onHoverChange = { hovering in

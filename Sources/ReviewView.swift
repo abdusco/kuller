@@ -14,41 +14,38 @@ struct ReviewView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button("Back to Culling") {
-                    appState.returnToCulling()
-                }
-                Spacer()
-                if let feedback = lastCopyFeedback {
-                    Text(feedback)
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
-            }
-            .padding(10)
+            toolbar
 
             HStack(spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Picks (\(appState.picks.count))")
-                        .font(.title3.bold())
-                        .padding(12)
-                    ImageGridView(coordinator: pickCoordinator, items: appState.picks)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                column(
+                    title: "Picks",
+                    icon: "checkmark.circle.fill",
+                    tint: .green,
+                    items: appState.picks,
+                    coordinator: pickCoordinator,
+                    emptyMessage: "Nothing picked"
+                )
 
-                Divider()
+                hairline
 
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Rejects (\(appState.rejects.count))")
-                        .font(.title3.bold())
-                        .padding(12)
-                    ImageGridView(coordinator: rejectCoordinator, items: appState.rejects)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                column(
+                    title: "Rejects",
+                    icon: "xmark.circle.fill",
+                    tint: .red,
+                    items: appState.rejects,
+                    coordinator: rejectCoordinator,
+                    emptyMessage: "Nothing rejected"
+                )
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black.opacity(0.8))
+        .background {
+            // Blur the desktop behind the window, then sit the dark tint on
+            // top of it so thumbnails read against a stable backdrop instead
+            // of whatever happens to be on screen.
+            VisualEffectBackground()
+                .overlay(Color.black.opacity(0.8))
+        }
         .onAppear {
             configureCoordinators()
             keyMonitor = KeyMonitor { event in
@@ -61,6 +58,91 @@ struct ReviewView: View {
             QuickLookController.shared.close()
         }
     }
+
+    // MARK: Chrome
+
+    private var toolbar: some View {
+        HStack(spacing: 12) {
+            Button {
+                appState.returnToCulling()
+            } label: {
+                Label("Back to Culling", systemImage: "chevron.left")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(.accessoryBar)
+
+            Spacer(minLength: 12)
+
+            if let feedback = lastCopyFeedback {
+                Label(feedback, systemImage: "doc.on.doc.fill")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.green)
+                    .transition(.opacity)
+            }
+
+            Text(Self.shortcutHint)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.white.opacity(0.05))
+        .overlay(alignment: .bottom) { hairline.frame(maxWidth: .infinity, maxHeight: 1) }
+        .animation(.easeInOut(duration: 0.15), value: lastCopyFeedback)
+    }
+
+    private static let shortcutHint = "P / X move  ·  Space previews  ·  ⌘C copies"
+
+    private var hairline: some View {
+        Rectangle()
+            .fill(Color.white.opacity(0.1))
+            .frame(width: 1)
+    }
+
+    /// One review column: a header with an icon, name and count pill, then
+    /// the grid (or a placeholder while the column is empty).
+    private func column(
+        title: String,
+        icon: String,
+        tint: Color,
+        items: [ImageItem],
+        coordinator: ImageGridCoordinator,
+        emptyMessage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                Text("\(items.count)")
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+
+            ImageGridView(coordinator: coordinator, items: items)
+                .overlay {
+                    if items.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "photo.on.rectangle.angled")
+                                .font(.system(size: 26, weight: .light))
+                            Text(emptyMessage)
+                                .font(.callout)
+                        }
+                        .foregroundStyle(.tertiary)
+                    }
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Wiring
 
     private func configureCoordinators() {
         pickCoordinator.onSelectionChanged = { ids in

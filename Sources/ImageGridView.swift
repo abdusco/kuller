@@ -44,11 +44,25 @@ final class DraggableImageReference: NSObject, NSPasteboardWriting {
     }
 }
 
+/// Grid geometry, shared with the window-sizing code so the review window's
+/// minimum size can be derived from it rather than guessed.
+enum ImageGridMetrics {
+    static let itemSize = NSSize(width: 156, height: 136)
+    static let spacing: CGFloat = 14
+    static let inset: CGFloat = 16
+    /// Room for exactly one column of thumbnails, plus the vertical scroller.
+    static let minimumColumnWidth = itemSize.width + inset * 2 + 16
+}
+
 private extension NSUserInterfaceItemIdentifier {
     static let thumbnailItem = NSUserInterfaceItemIdentifier("ThumbnailItem")
 }
 
 final class ThumbnailCollectionViewItem: NSCollectionViewItem {
+    /// Rounded, clipping tile that holds the picture and draws the selection
+    /// ring — kept separate from the cell's own view so the filename below
+    /// stays outside the ring, the way Finder's icon view lays out.
+    private let tile = NSView()
     private let thumbImageView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
     private var currentURL: URL?
@@ -56,7 +70,14 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
     override func loadView() {
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.cornerRadius = 6
+
+        tile.wantsLayer = true
+        tile.layer?.cornerRadius = 8
+        tile.layer?.cornerCurve = .continuous
+        tile.layer?.masksToBounds = true
+        tile.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        tile.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        tile.translatesAutoresizingMaskIntoConstraints = false
 
         thumbImageView.imageScaling = .scaleProportionallyUpOrDown
         thumbImageView.translatesAutoresizingMaskIntoConstraints = false
@@ -67,24 +88,31 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         nameLabel.alignment = .center
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        container.addSubview(thumbImageView)
+        tile.addSubview(thumbImageView)
+        container.addSubview(tile)
         container.addSubview(nameLabel)
 
         NSLayoutConstraint.activate([
-            thumbImageView.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
-            thumbImageView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
-            thumbImageView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -6),
-            thumbImageView.heightAnchor.constraint(equalToConstant: 105),
+            tile.topAnchor.constraint(equalTo: container.topAnchor),
+            tile.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tile.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tile.heightAnchor.constraint(equalToConstant: 112),
 
-            nameLabel.topAnchor.constraint(equalTo: thumbImageView.bottomAnchor, constant: 4),
-            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
-            nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -4),
-            nameLabel.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor, constant: -4),
+            thumbImageView.topAnchor.constraint(equalTo: tile.topAnchor, constant: 5),
+            thumbImageView.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 5),
+            thumbImageView.trailingAnchor.constraint(equalTo: tile.trailingAnchor, constant: -5),
+            thumbImageView.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -5),
+
+            nameLabel.topAnchor.constraint(equalTo: tile.bottomAnchor, constant: 6),
+            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
+            nameLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
+            nameLabel.bottomAnchor.constraint(lessThanOrEqualTo: container.bottomAnchor),
         ])
 
         view = container
         imageView = thumbImageView
         textField = nameLabel
+        updateSelectionAppearance()
     }
 
     override var isSelected: Bool {
@@ -92,9 +120,11 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
     }
 
     private func updateSelectionAppearance() {
-        view.layer?.backgroundColor = isSelected
-            ? NSColor.controlAccentColor.withAlphaComponent(0.35).cgColor
-            : NSColor.clear.cgColor
+        tile.layer?.borderWidth = isSelected ? 2.5 : 0
+        tile.layer?.backgroundColor = isSelected
+            ? NSColor.controlAccentColor.withAlphaComponent(0.28).cgColor
+            : NSColor.white.withAlphaComponent(0.06).cgColor
+        nameLabel.textColor = isSelected ? .labelColor : .secondaryLabelColor
     }
 
     func configure(with item: ImageItem) {
@@ -202,10 +232,15 @@ struct ImageGridView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSScrollView {
         let layout = NSCollectionViewFlowLayout()
-        layout.itemSize = NSSize(width: 150, height: 135)
-        layout.minimumInteritemSpacing = 10
-        layout.minimumLineSpacing = 10
-        layout.sectionInset = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        layout.itemSize = ImageGridMetrics.itemSize
+        layout.minimumInteritemSpacing = ImageGridMetrics.spacing
+        layout.minimumLineSpacing = ImageGridMetrics.spacing
+        layout.sectionInset = NSEdgeInsets(
+            top: 4,
+            left: ImageGridMetrics.inset,
+            bottom: ImageGridMetrics.inset,
+            right: ImageGridMetrics.inset
+        )
 
         let collectionView = NSCollectionView()
         collectionView.collectionViewLayout = layout
