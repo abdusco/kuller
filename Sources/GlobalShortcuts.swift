@@ -35,6 +35,8 @@ func confirmExitIfNeeded(appState: AppState) -> Bool {
 
     switch appState.phase {
     case .culling:
+        // Nothing to lose if the user hasn't picked or rejected anything yet.
+        guard appState.decisions.count > 0 else { return true }
         let pendingCount = appState.items.count - appState.decisions.count
         guard pendingCount > 0 else { return true }
         alert.messageText = "Quit with \(pendingCount) image\(pendingCount == 1 ? "" : "s") left to review?"
