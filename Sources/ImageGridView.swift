@@ -24,9 +24,11 @@ final class DraggableImageReference: NSObject, NSPasteboardWriting {
     static let itemIDType = NSPasteboard.PasteboardType("com.kuller.image-item-id")
 
     let item: ImageItem
+    let cropRects: [UUID: NormalizedRect]
 
-    init(item: ImageItem) {
+    init(item: ImageItem, cropRects: [UUID: NormalizedRect]) {
         self.item = item
+        self.cropRects = cropRects
     }
 
     func writableTypes(for pasteboard: NSPasteboard) -> [NSPasteboard.PasteboardType] {
@@ -35,7 +37,12 @@ final class DraggableImageReference: NSObject, NSPasteboardWriting {
 
     func pasteboardPropertyList(forType type: NSPasteboard.PasteboardType) -> Any? {
         if type == .fileURL {
-            return (item.url as NSURL).pasteboardPropertyList(forType: .fileURL)
+            // NSPasteboardWriting is queried synchronously by AppKit at drag
+            // time, so this resolves (and, on a cache miss, renders) the
+            // crop synchronously rather than via the async API used by
+            // Quick Look/copy.
+            let url = CroppedImageRenderer.resolvedURLSync(for: item, cropRects: cropRects)
+            return (url as NSURL).pasteboardPropertyList(forType: .fileURL)
         }
         if type == Self.itemIDType {
             return item.id.uuidString
@@ -65,7 +72,10 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
     private let tile = NSView()
     private let thumbImageView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
+    private let cropBadge = NSImageView()
+    private let deleteButton = NSButton()
     private var currentURL: URL?
+    private var onDelete: (() -> Void)?
 
     override func loadView() {
         let container = NSView()
@@ -92,6 +102,33 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         container.addSubview(tile)
         container.addSubview(nameLabel)
 
+        cropBadge.wantsLayer = true
+        cropBadge.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        cropBadge.layer?.cornerRadius = 8
+        cropBadge.image = NSImage(systemSymbolName: "crop", accessibilityDescription: "Cropped")
+        cropBadge.contentTintColor = .white
+        cropBadge.symbolConfiguration = .init(pointSize: 9, weight: .semibold)
+        cropBadge.isHidden = true
+        cropBadge.translatesAutoresizingMaskIntoConstraints = false
+        tile.addSubview(cropBadge)
+
+        // Only shown on virtual copies (see AppState.insertVirtualCopy) —
+        // bottom-trailing, opposite cropBadge's bottom-leading, so "what is
+        // this" and "discard it" never overlap.
+        deleteButton.bezelStyle = .regularSquare
+        deleteButton.isBordered = false
+        deleteButton.imagePosition = .imageOnly
+        deleteButton.image = NSImage(systemSymbolName: "trash.circle.fill", accessibilityDescription: "Delete crop")
+        deleteButton.contentTintColor = .white
+        deleteButton.wantsLayer = true
+        deleteButton.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.55).cgColor
+        deleteButton.layer?.cornerRadius = 9
+        deleteButton.isHidden = true
+        deleteButton.translatesAutoresizingMaskIntoConstraints = false
+        deleteButton.target = self
+        deleteButton.action = #selector(deleteTapped)
+        tile.addSubview(deleteButton)
+
         NSLayoutConstraint.activate([
             tile.topAnchor.constraint(equalTo: container.topAnchor),
             tile.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -102,6 +139,16 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
             thumbImageView.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 5),
             thumbImageView.trailingAnchor.constraint(equalTo: tile.trailingAnchor, constant: -5),
             thumbImageView.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -5),
+
+            cropBadge.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -4),
+            cropBadge.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 4),
+            cropBadge.widthAnchor.constraint(equalToConstant: 16),
+            cropBadge.heightAnchor.constraint(equalToConstant: 16),
+
+            deleteButton.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -4),
+            deleteButton.trailingAnchor.constraint(equalTo: tile.trailingAnchor, constant: -4),
+            deleteButton.widthAnchor.constraint(equalToConstant: 18),
+            deleteButton.heightAnchor.constraint(equalToConstant: 18),
 
             nameLabel.topAnchor.constraint(equalTo: tile.bottomAnchor, constant: 6),
             nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 2),
@@ -127,14 +174,21 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         nameLabel.textColor = isSelected ? .labelColor : .secondaryLabelColor
     }
 
-    func configure(with item: ImageItem) {
+    func configure(with item: ImageItem, cropRect: NormalizedRect?, onDelete: @escaping () -> Void) {
         nameLabel.stringValue = item.displayName
         thumbImageView.image = nil
         currentURL = item.url
+        self.onDelete = onDelete
+        cropBadge.isHidden = !item.isVirtualCopy
+        deleteButton.isHidden = !item.isVirtualCopy
         ThumbnailCache.shared.thumbnail(for: item.url, maxPixelSize: 320) { [weak self] loaded in
             guard self?.currentURL == item.url else { return }
-            self?.thumbImageView.image = loaded
+            self?.thumbImageView.image = loaded?.cropped(to: cropRect)
         }
+    }
+
+    @objc private func deleteTapped() {
+        onDelete?()
     }
 }
 
@@ -145,8 +199,10 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
 final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollectionViewDelegate {
     let kind: ReviewColumnKind
     var items: [ImageItem] = []
+    var cropRects: [UUID: NormalizedRect] = [:]
     var onSelectionChanged: (Set<UUID>) -> Void = { _ in }
     var onDropReclassify: ([UUID]) -> Void = { _ in }
+    var onDeleteVirtualCopy: (ImageItem) -> Void = { _ in }
     weak var collectionView: NSCollectionView?
     private(set) var selectedIDs: Set<UUID> = []
 
@@ -162,7 +218,8 @@ final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollec
 
     func collectionView(_ collectionView: NSCollectionView, itemForRepresentedObjectAt indexPath: IndexPath) -> NSCollectionViewItem {
         let cell = collectionView.makeItem(withIdentifier: .thumbnailItem, for: indexPath) as! ThumbnailCollectionViewItem
-        cell.configure(with: items[indexPath.item])
+        let item = items[indexPath.item]
+        cell.configure(with: item, cropRect: cropRects[item.id], onDelete: { [weak self] in self?.onDeleteVirtualCopy(item) })
         return cell
     }
 
@@ -172,7 +229,7 @@ final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollec
 
     func collectionView(_ collectionView: NSCollectionView, pasteboardWriterForItemAt indexPath: IndexPath) -> NSPasteboardWriting? {
         guard items.indices.contains(indexPath.item) else { return nil }
-        return DraggableImageReference(item: items[indexPath.item])
+        return DraggableImageReference(item: items[indexPath.item], cropRects: cropRects)
     }
 
     func collectionView(_ collectionView: NSCollectionView, didSelectItemsAt indexPaths: Set<IndexPath>) {
@@ -225,6 +282,7 @@ final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollec
 struct ImageGridView: NSViewRepresentable {
     let coordinator: ImageGridCoordinator
     let items: [ImageItem]
+    var cropRects: [UUID: NormalizedRect] = [:]
 
     func makeCoordinator() -> ImageGridCoordinator {
         coordinator
@@ -277,6 +335,7 @@ struct ImageGridView: NSViewRepresentable {
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.items = items
+        context.coordinator.cropRects = cropRects
         guard let collectionView = context.coordinator.collectionView else { return }
         let previousSelection = context.coordinator.selectedIDs
         collectionView.reloadData()

@@ -9,22 +9,41 @@ final class QuickLookController: NSObject, QLPreviewPanelDataSource, QLPreviewPa
 
     private var urls: [URL] = []
 
-    /// Space toggles: opens the panel showing `urls` starting at
+    /// Space toggles: opens the panel showing `items` (resolved to their
+    /// committed crop, if any — see CroppedImageRenderer) starting at
     /// `startIndex`, or closes it if it's already up. Passing more than one
-    /// URL is what makes the panel's arrow-key navigation work.
-    func toggle(urls: [URL], startIndex: Int = 0) {
+    /// item is what makes the panel's arrow-key navigation work.
+    func toggle(items: [ImageItem], cropRects: [UUID: NormalizedRect], startIndex: Int = 0) {
         guard let panel = QLPreviewPanel.shared() else { return }
         if panel.isVisible {
             panel.orderOut(nil)
             return
         }
-        guard !urls.isEmpty else { return }
-        self.urls = urls
-        panel.makeKeyAndOrderFront(nil)
-        panel.reloadData()
-        // Must come after reloadData, or the panel has no items to index into.
-        if urls.indices.contains(startIndex) {
-            panel.currentPreviewItemIndex = startIndex
+        guard !items.isEmpty else { return }
+        resolveURLs(for: items, cropRects: cropRects) { [weak self] resolved in
+            guard let self else { return }
+            self.urls = resolved
+            panel.makeKeyAndOrderFront(nil)
+            panel.reloadData()
+            // Must come after reloadData, or the panel has no items to index into.
+            if resolved.indices.contains(startIndex) {
+                panel.currentPreviewItemIndex = startIndex
+            }
+        }
+    }
+
+    private func resolveURLs(for items: [ImageItem], cropRects: [UUID: NormalizedRect], completion: @escaping ([URL]) -> Void) {
+        var resolved = [URL?](repeating: nil, count: items.count)
+        let group = DispatchGroup()
+        for (index, item) in items.enumerated() {
+            group.enter()
+            CroppedImageRenderer.resolvedURL(for: item, cropRects: cropRects) { url in
+                resolved[index] = url
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            completion(resolved.compactMap { $0 })
         }
     }
 

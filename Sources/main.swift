@@ -86,6 +86,9 @@ func resizeCanvasWindow(toImageSize imageSize: CGSize) {
     // window to the image's aspect ratio and dropped its minimum size back to
     // the tiny culling one, which is how review could be squashed to a sliver.
     guard appState.phase == .culling else { return }
+    // The crop tool has already grown the window by a fixed margin; letting
+    // this run mid-crop (e.g. a decode finishing late) would fight that.
+    guard !appState.isCropping else { return }
     canvasWindow.minSize = NSSize(width: 120, height: 90)
     canvasWindow.aspectRatio = imageSize
     let newSize = fittedWindowSize(forImageSize: imageSize)
@@ -150,6 +153,41 @@ func resizeCanvasWindowForReview() {
     canvasWindow.setFrame(newFrame, display: true, animate: false)
 }
 
+/// While cropping, the canvas window temporarily covers the whole screen
+/// with an 80%-black backdrop (drawn by CropOverlayView) and the image
+/// centered within it, padded on all sides — giving a drag started outside
+/// the image's true edge somewhere to land, and a much bigger canvas to
+/// work with than the image's normal small culling window. Interactive
+/// resizing is disabled for the duration since there's no meaningful
+/// "resize" of a screen-covering window.
+var canvasFrameBeforeCrop: NSRect?
+
+func enterCropWindowMode() {
+    guard appState.phase == .culling, canvasFrameBeforeCrop == nil else { return }
+    canvasFrameBeforeCrop = canvasWindow.frame
+    canvasWindow.styleMask.remove(.resizable)
+    canvasWindow.setFrame(visibleFrame, display: true, animate: false)
+    // The title bar itself (not just HoverTrackingHostingView's own drag
+    // handling, which only gates the content view) can still be
+    // click-dragged by AppKit's default window behavior, and the traffic
+    // lights have no purpose on a screen-covering crop overlay — hide both.
+    canvasWindow.isMovable = false
+    for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+        canvasWindow.standardWindowButton(button)?.isHidden = true
+    }
+}
+
+func exitCropWindowMode() {
+    guard let saved = canvasFrameBeforeCrop else { return }
+    canvasWindow.styleMask.insert(.resizable)
+    canvasWindow.setFrame(saved, display: true, animate: false)
+    canvasFrameBeforeCrop = nil
+    canvasWindow.isMovable = true
+    for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+        canvasWindow.standardWindowButton(button)?.isHidden = false
+    }
+}
+
 let canvasWindowDelegate = CanvasWindowDelegate(appState: appState)
 canvasWindow.delegate = canvasWindowDelegate
 
@@ -171,7 +209,7 @@ canvasHostingView.onHoverChange = { hovering in
         titlebarView.animator().alphaValue = hovering ? 1 : 0
     }
 }
-canvasHostingView.allowsWindowInteraction = { appState.phase == .culling }
+canvasHostingView.allowsWindowInteraction = { appState.phase == .culling && !appState.isCropping }
 canvasHostingView.onMagnify = { magnification in
     scaleCanvasWindow(byFactor: 1 + magnification)
 }
@@ -266,6 +304,28 @@ appState.$currentIndex
     }
     .store(in: &cancellables)
 
+appState.$isCropping
+    .sink { cropping in
+        // @Published fires in willSet; deferring keeps this consistent with
+        // the $phase sink below, for the same reason.
+        DispatchQueue.main.async {
+            if cropping {
+                // The sidebar floats above canvasWindow at the screen's
+                // literal left edge; once cropping makes the canvas cover
+                // the whole screen too, the sidebar would otherwise sit on
+                // top of (and obscure) its left edge.
+                sidebarWindow.orderOut(nil)
+                enterCropWindowMode()
+            } else {
+                exitCropWindowMode()
+                if appState.phase == .culling {
+                    sidebarWindow.orderFront(nil)
+                }
+            }
+        }
+    }
+    .store(in: &cancellables)
+
 // The sidebar only makes sense during culling; hide it on the review screen.
 // If --copy-picks-to was given, skip the review screen entirely: copy picks
 // straight to that directory and quit as soon as culling is done.
@@ -290,7 +350,7 @@ appState.$phase
                 sidebarWindow.orderOut(nil)
                 resizeCanvasWindowForReview()
                 if let destination = copyPicksToURL {
-                    PicksExport.copyPicks(appState.picks, to: destination)
+                    PicksExport.copyPicks(appState.picks, cropRects: appState.cropRects, to: destination)
                     NSApp.terminate(nil)
                 }
             }

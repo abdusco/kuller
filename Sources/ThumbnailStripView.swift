@@ -15,7 +15,9 @@ struct ThumbnailStripView: View {
                         ThumbnailStripRow(
                             item: item,
                             isCurrent: index == appState.currentIndex,
-                            decision: appState.decisions[item.id]
+                            decision: appState.decisions[item.id],
+                            cropRect: appState.cropRects[item.id],
+                            onDelete: { appState.removeVirtualCopy(item) }
                         )
                         .id(item.id)
                         .onTapGesture {
@@ -45,15 +47,24 @@ private struct ThumbnailStripRow: View {
     let item: ImageItem
     let isCurrent: Bool
     let decision: Decision?
+    let cropRect: NormalizedRect?
+    let onDelete: () -> Void
 
     @State private var thumbnail: NSImage?
     @State private var aspectRatio: CGFloat
 
-    init(item: ImageItem, isCurrent: Bool, decision: Decision?) {
+    init(item: ImageItem, isCurrent: Bool, decision: Decision?, cropRect: NormalizedRect?, onDelete: @escaping () -> Void) {
         self.item = item
         self.isCurrent = isCurrent
         self.decision = decision
-        _aspectRatio = State(initialValue: ThumbnailCache.shared.cachedAspectRatio(for: item.url) ?? 4.0 / 3.0)
+        self.cropRect = cropRect
+        self.onDelete = onDelete
+        let fullAspect = ThumbnailCache.shared.cachedAspectRatio(for: item.url) ?? 4.0 / 3.0
+        if let cropRect, cropRect != .fullImage, cropRect.height > 0 {
+            _aspectRatio = State(initialValue: fullAspect * cropRect.width / cropRect.height)
+        } else {
+            _aspectRatio = State(initialValue: fullAspect)
+        }
     }
 
     var body: some View {
@@ -75,6 +86,23 @@ private struct ThumbnailStripRow: View {
                     .stroke(isCurrent ? Color.accentColor : Color.clear, lineWidth: 3)
             )
 
+            if item.isVirtualCopy {
+                // Crop badge and delete button sit in the two bottom
+                // corners so neither ever competes with the decision
+                // indicator, which always stays top-trailing regardless of
+                // whether this row is a virtual copy.
+                cropBadge
+                    .padding(4)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                Button(action: onDelete) {
+                    Image(systemName: "trash.circle.fill")
+                        .foregroundStyle(.white, Color.black.opacity(0.55))
+                        .font(.system(size: 18))
+                }
+                .buttonStyle(.plain)
+                .padding(4)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            }
             if let decision = decision {
                 Image(systemName: decision == .pick ? "checkmark.circle.fill" : "xmark.circle.fill")
                     .foregroundStyle(.white, decision == .pick ? Color.green : Color.red)
@@ -82,13 +110,31 @@ private struct ThumbnailStripRow: View {
                     .padding(4)
             }
         }
-        .onAppear {
-            ThumbnailCache.shared.aspectRatio(for: item.url) { ratio in
+        .onAppear(perform: refresh)
+        .onChange(of: cropRect) { _, _ in refresh() }
+    }
+
+    private var cropBadge: some View {
+        Image(systemName: "crop")
+            .foregroundStyle(.white)
+            .font(.system(size: 11, weight: .semibold))
+            .padding(3)
+            .background(Circle().fill(Color.black.opacity(0.55)))
+    }
+
+    /// Re-fetches (from cache — cheap) and re-crops, so committing a crop
+    /// while this row is already on screen updates it without needing the
+    /// row itself to be recreated.
+    private func refresh() {
+        ThumbnailCache.shared.aspectRatio(for: item.url) { ratio in
+            if let cropRect, cropRect != .fullImage, cropRect.height > 0 {
+                aspectRatio = ratio * cropRect.width / cropRect.height
+            } else {
                 aspectRatio = ratio
             }
-            ThumbnailCache.shared.thumbnail(for: item.url) { loaded in
-                thumbnail = loaded
-            }
+        }
+        ThumbnailCache.shared.thumbnail(for: item.url) { loaded in
+            thumbnail = loaded?.cropped(to: cropRect)
         }
     }
 }

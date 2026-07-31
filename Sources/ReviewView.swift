@@ -126,7 +126,7 @@ struct ReviewView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
 
-            ImageGridView(coordinator: coordinator, items: items)
+            ImageGridView(coordinator: coordinator, items: items, cropRects: appState.cropRects)
                 .overlay {
                     if items.isEmpty {
                         VStack(spacing: 6) {
@@ -152,12 +152,18 @@ struct ReviewView: View {
         pickCoordinator.onDropReclassify = { ids in
             appState.setDecision(ids: ids, to: .pick)
         }
+        pickCoordinator.onDeleteVirtualCopy = { item in
+            appState.removeVirtualCopy(item)
+        }
         rejectCoordinator.onSelectionChanged = { ids in
             rejectSelection = ids
             focusedColumn = .rejects
         }
         rejectCoordinator.onDropReclassify = { ids in
             appState.setDecision(ids: ids, to: .reject)
+        }
+        rejectCoordinator.onDeleteVirtualCopy = { item in
+            appState.removeVirtualCopy(item)
         }
     }
 
@@ -202,37 +208,37 @@ struct ReviewView: View {
     /// keys walk the whole column from there, while previewing a multi-image
     /// selection stays within that selection.
     private func previewSelection() {
-        let selected = selectedURLs()
+        let selected = selectedItems()
         guard !selected.isEmpty else { return }
 
-        if selected.count == 1, let index = columnURLs().firstIndex(of: selected[0]) {
-            QuickLookController.shared.toggle(urls: columnURLs(), startIndex: index)
+        if selected.count == 1, let index = columnItems().firstIndex(of: selected[0]) {
+            QuickLookController.shared.toggle(items: columnItems(), cropRects: appState.cropRects, startIndex: index)
         } else {
-            QuickLookController.shared.toggle(urls: selected)
+            QuickLookController.shared.toggle(items: selected, cropRects: appState.cropRects)
         }
     }
 
     /// Every item in whichever column was last interacted with, in display
     /// order.
-    private func columnURLs() -> [URL] {
+    private func columnItems() -> [ImageItem] {
         switch focusedColumn {
         case .picks:
-            return appState.picks.map { $0.url }
+            return appState.picks
         case .rejects:
-            return appState.rejects.map { $0.url }
+            return appState.rejects
         case nil:
             return []
         }
     }
 
-    /// URLs of the currently-selected items in whichever column was last
-    /// interacted with.
-    private func selectedURLs() -> [URL] {
+    /// The currently-selected items in whichever column was last interacted
+    /// with.
+    private func selectedItems() -> [ImageItem] {
         switch focusedColumn {
         case .picks:
-            return appState.picks.filter { pickSelection.contains($0.id) }.map { $0.url }
+            return appState.picks.filter { pickSelection.contains($0.id) }
         case .rejects:
-            return appState.rejects.filter { rejectSelection.contains($0.id) }.map { $0.url }
+            return appState.rejects.filter { rejectSelection.contains($0.id) }
         case nil:
             return []
         }
@@ -263,10 +269,30 @@ struct ReviewView: View {
     }
 
     private func copySelection() {
-        let urls = selectedURLs()
-        guard !urls.isEmpty else { return }
-        FilePasteboard.copy(urls: urls)
-        lastCopyFeedback = "Copied \(urls.count) file\(urls.count == 1 ? "" : "s")"
+        let items = selectedItems()
+        guard !items.isEmpty else { return }
+        resolveURLs(for: items) { urls in
+            FilePasteboard.copy(urls: urls)
+            lastCopyFeedback = "Copied \(urls.count) file\(urls.count == 1 ? "" : "s")"
+        }
+    }
+
+    /// Resolves each item to the file that should actually represent it —
+    /// its committed crop rendered to a temp file, if any, otherwise the
+    /// original — before handing URLs to the pasteboard.
+    private func resolveURLs(for items: [ImageItem], completion: @escaping ([URL]) -> Void) {
+        var resolved = [URL?](repeating: nil, count: items.count)
+        let group = DispatchGroup()
+        for (index, item) in items.enumerated() {
+            group.enter()
+            CroppedImageRenderer.resolvedURL(for: item, cropRects: appState.cropRects) { url in
+                resolved[index] = url
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) {
+            completion(resolved.compactMap { $0 })
+        }
     }
 
     private func selectAllInFocusedColumn() {

@@ -6,6 +6,8 @@ final class AppState: ObservableObject {
     @Published var decisions: [UUID: Decision] = [:]
     @Published var currentIndex: Int = 0
     @Published var phase: AppPhase = .culling
+    @Published var isCropping: Bool = false
+    @Published var cropRects: [UUID: NormalizedRect] = [:]
 
     init(items: [ImageItem]) {
         self.items = items
@@ -76,6 +78,37 @@ final class AppState: ObservableObject {
     func setDecision(ids: [UUID], to decision: Decision) {
         for id in ids {
             decisions[id] = decision
+        }
+    }
+
+    /// Commits a crop as a new, independent item (same `url`, fresh `id`)
+    /// inserted directly after `original` — rather than cropping `original`
+    /// itself — so the source file stays untouched and browsable. Inserting
+    /// right after `original`'s current index never shifts `original`'s own
+    /// index, so `currentIndex`/`currentItem` don't need adjusting.
+    @discardableResult
+    func insertVirtualCopy(of original: ImageItem, cropRect: NormalizedRect) -> ImageItem {
+        let existingCopies = items.filter { $0.url == original.url && $0.isVirtualCopy }.count
+        let copy = ImageItem(url: original.url, isVirtualCopy: true, copyIndex: existingCopies + 1)
+        let insertAt = (items.firstIndex(of: original) ?? items.count - 1) + 1
+        items.insert(copy, at: insertAt)
+        cropRects[copy.id] = cropRect
+        return copy
+    }
+
+    /// Removes a virtual copy created by `insertVirtualCopy`, along with its
+    /// decision/crop state. Adjusts `currentIndex` so the item the user was
+    /// actually looking at (by identity, not raw index) stays current.
+    func removeVirtualCopy(_ item: ImageItem) {
+        guard item.isVirtualCopy, let index = items.firstIndex(of: item) else { return }
+        items.remove(at: index)
+        decisions[item.id] = nil
+        cropRects[item.id] = nil
+        CroppedImageRenderer.invalidate(itemID: item.id)
+        if currentIndex > index {
+            currentIndex -= 1
+        } else if currentIndex >= items.count {
+            currentIndex = max(0, items.count - 1)
         }
     }
 }
