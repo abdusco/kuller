@@ -4,6 +4,12 @@ import AppKit
 /// which asks for confirmation if there are still undecided images.
 /// Returns true if the event was handled.
 func handleGlobalShortcuts(_ event: NSEvent, appState: AppState) -> Bool {
+    // The confirmation sheet owns Escape. Consume repeated exit shortcuts
+    // while it is open so they cannot stack additional alerts behind it.
+    if ExitConfirmationController.shared.isPresenting {
+        return true
+    }
+
     let modifiers = event.modifierFlags
     let characters = event.charactersIgnoringModifiers?.lowercased()
     let escapeKeyCode: UInt16 = 53
@@ -16,45 +22,12 @@ func handleGlobalShortcuts(_ event: NSEvent, appState: AppState) -> Bool {
     let isCmdW = modifiers.contains(.command) && characters == "w"
     let isEscape = event.keyCode == escapeKeyCode
     if isCmdW || isEscape {
-        if confirmExitIfNeeded(appState: appState) {
-            NSApp.terminate(nil)
-        }
+        let parentWindow = NSApp.keyWindow
+            ?? NSApp.mainWindow
+            ?? NSApp.windows.first(where: \.isVisible)
+        ExitConfirmationController.shared.requestExit(appState: appState, parentWindow: parentWindow)
         return true
     }
 
     return false
-}
-
-/// Returns true if it's fine to proceed with exiting/closing now — either
-/// there's nothing to lose, or the user confirmed discarding it via the alert.
-/// Shared by the Esc/Cmd+W shortcut and the canvas window's own close-button
-/// handling, so both paths behave the same way.
-func confirmExitIfNeeded(appState: AppState) -> Bool {
-    let alert = NSAlert()
-    alert.alertStyle = .warning
-
-    switch appState.phase {
-    case .culling:
-        // Nothing to lose if the user hasn't picked or rejected anything yet.
-        guard appState.decisions.count > 0 else { return true }
-        let pendingCount = appState.items.count - appState.decisions.count
-        guard pendingCount > 0 else { return true }
-        alert.messageText = "Quit with \(pendingCount) image\(pendingCount == 1 ? "" : "s") left to review?"
-        alert.informativeText = "Images you haven't picked or rejected yet will be left undecided."
-    case .review:
-        // Every image is decided here, so the old pending-count test never
-        // fired and Esc quit outright — throwing away the whole sort, which
-        // only exists in memory until the files are copied somewhere.
-        let pickCount = appState.picks.count
-        let rejectCount = appState.rejects.count
-        alert.messageText = "Quit and discard this sort?"
-        alert.informativeText = "\(pickCount) pick\(pickCount == 1 ? "" : "s"), \(rejectCount) reject\(rejectCount == 1 ? "" : "s")."
-    }
-
-    alert.addButton(withTitle: "Quit")
-    alert.addButton(withTitle: "Cancel")
-    // Esc should cancel the alert rather than confirm the quit it's asking
-    // about; without this the second button isn't wired to Esc.
-    alert.buttons.last?.keyEquivalent = "\u{1b}"
-    return alert.runModal() == .alertFirstButtonReturn
 }

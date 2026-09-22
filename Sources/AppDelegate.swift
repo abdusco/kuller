@@ -16,7 +16,10 @@ final class CanvasWindowDelegate: NSObject, NSWindowDelegate {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        confirmExitIfNeeded(appState: appState)
+        ExitConfirmationController.shared.requestExit(appState: appState, parentWindow: sender)
+        // Exit is continued from the sheet's completion handler, never by
+        // closing synchronously while AppKit is handling the close request.
+        return false
     }
 
     /// Hard floor for the review window, enforced here rather than only via
