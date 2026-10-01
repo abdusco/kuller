@@ -8,6 +8,8 @@ final class AppState: ObservableObject {
     @Published var phase: AppPhase = .culling
     @Published var isCropping: Bool = false
     @Published var cropRects: [UUID: NormalizedRect] = [:]
+    @Published var cullingImageSize: CGSize?
+    @Published var cullingImageOffset: CGSize = .zero
 
     init(items: [ImageItem]) {
         self.items = items

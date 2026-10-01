@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The image window IS the image: the window's size and aspect ratio track
-/// the current image, so this view just fills it. Moving and resizing are
+/// The window follows the image's size until it reaches the display edges,
+/// then this view clips the zoomed image within the window. Moving and resizing are
 /// handled at the AppKit level by HoverTrackingHostingView (native window
 /// drag + pinch), not by SwiftUI gestures.
 struct ImageViewerView: View {
@@ -16,12 +16,14 @@ struct ImageViewerView: View {
     /// reflects a crop, not just the thumbnails. Passed as `nil` while
     /// actively cropping — the crop overlay needs the untouched full image.
     var cropRect: NormalizedRect?
+    var zoomedSize: CGSize?
+    var zoomOffset: CGSize = .zero
 
     @State private var image: NSImage?
     @State private var loadedURL: URL?
 
     var body: some View {
-        ZStack {
+        GeometryReader { geometry in
             // No backdrop: the window is sized to the image's aspect ratio,
             // so the image fills it edge to edge and anything behind the
             // window shows through around it.
@@ -29,12 +31,18 @@ struct ImageViewerView: View {
                 Image(nsImage: image)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
+                    .frame(width: zoomedSize?.width ?? geometry.size.width,
+                           height: zoomedSize?.height ?? geometry.size.height)
+                    .position(x: geometry.size.width / 2 + zoomOffset.width,
+                              y: geometry.size.height / 2 + zoomOffset.height)
             } else {
                 ProgressView()
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
         }
         .frame(maxWidth: pinnedSize == nil ? .infinity : nil, maxHeight: pinnedSize == nil ? .infinity : nil)
         .frame(width: pinnedSize?.width, height: pinnedSize?.height)
+        .clipped()
         .contentShape(Rectangle())
         .onAppear { load(item) }
         .onChange(of: item) { _, newItem in

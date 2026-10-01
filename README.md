@@ -9,6 +9,10 @@ The image window *is* the image: it takes the picture's aspect ratio, floats
 over your desktop, drags by grabbing it and resizes by pinching. Thumbnails
 live in a panel docked to the left edge of the screen.
 
+Pinching grows the window up to the display edges, then keeps zooming the
+image inside it. Drag to pan when zoomed beyond the window; double-click to
+reset the image and window to their fitted size.
+
 ## Build
 
 ```sh

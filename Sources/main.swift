@@ -37,13 +37,11 @@ func fittedWindowSize(forImageSize imageSize: CGSize) -> NSSize {
     return NSSize(width: imageSize.width * scale, height: imageSize.height * scale)
 }
 
-// MARK: - Canvas window: the window IS the image (Preview/Photoshop-style),
-// not a fixed pane with internal pan/zoom. Its size/aspect always matches
-// the current image; dragging the image moves this window, pinching
-// resizes it (see ImageViewerView). That gets a real title bar with
-// traffic lights and the standard AppKit drop shadow for free.
+// MARK: - Canvas window: grows with the image until it reaches the screen
+// edges, then clips the image for internal zoom and pan.
 
 let firstImageSize = appState.currentItem.flatMap { ThumbnailCache.quickPixelSize(of: $0.url) }
+var canvasImageSize = firstImageSize ?? defaultReviewSize
 let initialCanvasSize = fittedWindowSize(forImageSize: firstImageSize ?? defaultReviewSize)
 let canvasFrame = NSRect(
     x: visibleFrame.midX - initialCanvasSize.width / 2,
@@ -89,6 +87,9 @@ func resizeCanvasWindow(toImageSize imageSize: CGSize) {
     // The crop tool has already grown the window by a fixed margin; letting
     // this run mid-crop (e.g. a decode finishing late) would fight that.
     guard !appState.isCropping else { return }
+    canvasImageSize = imageSize
+    appState.cullingImageSize = nil
+    appState.cullingImageOffset = .zero
     canvasWindow.minSize = NSSize(width: 120, height: 90)
     canvasWindow.aspectRatio = imageSize
     let newSize = fittedWindowSize(forImageSize: imageSize)
@@ -102,41 +103,40 @@ func resizeCanvasWindow(toImageSize imageSize: CGSize) {
     canvasWindow.setFrame(newFrame, display: true, animate: false)
 }
 
-/// Scales the canvas window around its center by an incremental factor
-/// (from a pinch delta), preserving its current aspect ratio.
+/// Scales the image even after one or both window axes reach the screen.
 func scaleCanvasWindow(byFactor factor: CGFloat) {
     let current = canvasWindow.frame
-    guard current.width > 0, current.height > 0, factor > 0 else { return }
-
-    let aspect = current.height / current.width
-    let minWidth = max(canvasWindow.minSize.width, 140)
-    let minHeight = max(canvasWindow.minSize.height, 105)
-
-    var newWidth = min(max(current.width * factor, minWidth), visibleFrame.width * 3)
-    var newHeight = newWidth * aspect
-    if newHeight < minHeight {
-        newHeight = minHeight
-        newWidth = newHeight / aspect
+    guard current.width > 0, current.height > 0, factor.isFinite, factor > 0 else { return }
+    let screen = canvasWindow.screen?.visibleFrame ?? visibleFrame
+    let imageSize = appState.cullingImageSize ?? current.size
+    let minimumScale = max(140 / imageSize.width, 105 / imageSize.height)
+    let maximumScale = max(screen.width / imageSize.width, screen.height / imageSize.height) * 16
+    let scale = min(max(factor, minimumScale), maximumScale)
+    guard abs(scale - 1) > 0.00001 else { return }
+    let newSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+    let newFrame = zoomedCanvasFrame(imageSize: newSize, around: current, within: screen)
+    // An aspect lock would keep the shorter axis from growing once the
+    // longer axis hits the screen edge. Restore it on zoom-out to a size
+    // where the whole image fits in the window again.
+    if newSize.width > screen.width || newSize.height > screen.height {
+        canvasWindow.resizeIncrements = NSSize(width: 1, height: 1)
+    } else {
+        canvasWindow.aspectRatio = canvasImageSize
     }
-
-    // Already at a clamp: leave the frame completely alone. Recomputing an
-    // origin from a size AppKit then refuses to apply is what made repeated
-    // pinching past the minimum walk the window across the screen.
-    guard abs(newWidth - current.width) > 0.5 else { return }
-
-    let center = CGPoint(x: current.midX, y: current.midY)
-    let newFrame = NSRect(
-        x: center.x - newWidth / 2,
-        y: center.y - newHeight / 2,
-        width: newWidth,
-        height: newHeight
-    )
+    appState.cullingImageSize = newSize
     canvasWindow.setFrame(newFrame, display: true, animate: false)
+    appState.cullingImageOffset = clampedImageOffset(
+        CGSize(width: appState.cullingImageOffset.width * scale,
+               height: appState.cullingImageOffset.height * scale),
+        imageSize: newSize, viewport: canvasWindow.frame.size
+    )
 }
 
 /// Switches the canvas back to a normal, freely-resizable window for the
 /// review screen (no image to lock the aspect ratio to).
 func resizeCanvasWindowForReview() {
+    appState.cullingImageSize = nil
+    appState.cullingImageOffset = .zero
     // Clear the aspect-ratio lock by setting resizeIncrements, which AppKit
     // documents as mutually exclusive with it. Assigning .zero to aspectRatio
     // instead leaves the constraint installed with a degenerate ratio, and
@@ -214,9 +214,19 @@ canvasHostingView.onMagnify = { magnification in
     scaleCanvasWindow(byFactor: 1 + magnification)
 }
 canvasHostingView.onResetSize = {
-    guard let item = appState.currentItem,
-          let size = ThumbnailCache.quickPixelSize(of: item.url) else { return }
-    resizeCanvasWindow(toImageSize: size)
+    resizeCanvasWindow(toImageSize: canvasImageSize)
+}
+canvasHostingView.allowsImagePanning = {
+    guard let size = appState.cullingImageSize else { return false }
+    return size.width > canvasWindow.frame.width + 0.5 || size.height > canvasWindow.frame.height + 0.5
+}
+canvasHostingView.onPan = { delta in
+    guard let size = appState.cullingImageSize else { return }
+    appState.cullingImageOffset = clampedImageOffset(
+        CGSize(width: appState.cullingImageOffset.width + delta.width,
+               height: appState.cullingImageOffset.height + delta.height),
+        imageSize: size, viewport: canvasWindow.frame.size
+    )
 }
 canvasWindow.contentView = canvasHostingView
 canvasWindow.makeKeyAndOrderFront(nil)

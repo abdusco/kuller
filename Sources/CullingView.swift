@@ -13,7 +13,9 @@ struct CullingView: View {
             ImageViewerView(
                 item: appState.currentItem,
                 pinnedSize: appState.isCropping ? cropSession.pinnedImageSize : nil,
-                cropRect: appState.isCropping ? nil : appState.currentItem.flatMap { appState.cropRects[$0.id] }
+                cropRect: appState.isCropping ? nil : appState.currentItem.flatMap { appState.cropRects[$0.id] },
+                zoomedSize: appState.isCropping ? nil : appState.cullingImageSize,
+                zoomOffset: appState.isCropping ? .zero : appState.cullingImageOffset
             )
             if appState.isCropping {
                 CropOverlayView(session: cropSession, onCommit: commitCrop, onCancel: cancelCrop)

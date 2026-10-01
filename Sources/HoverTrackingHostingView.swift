@@ -18,6 +18,9 @@ final class HoverTrackingHostingView<Content: View>: NSHostingView<Content> {
     var onHoverChange: (Bool) -> Void = { _ in }
     var onMagnify: (CGFloat) -> Void = { _ in }
     var onResetSize: () -> Void = {}
+    var allowsImagePanning: () -> Bool = { false }
+    var onPan: (CGSize) -> Void = { _ in }
+    private var lastPanLocation: CGPoint?
     /// Gates window drag/resize so it only applies while culling — the
     /// review screen needs normal mouse handling for marquee selection and
     /// dragging items out to Finder.
@@ -54,12 +57,35 @@ final class HoverTrackingHostingView<Content: View>: NSHostingView<Content> {
             return
         }
         if event.clickCount == 2 {
+            lastPanLocation = nil
             onResetSize()
+            return
+        }
+        if allowsImagePanning() {
+            lastPanLocation = event.locationInWindow
             return
         }
         // Hands off to AppKit's native window-drag loop: smooth, and immune
         // to the coordinate-space feedback that plagued the SwiftUI version.
         window?.performDrag(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard allowsWindowInteraction(), let previous = lastPanLocation else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let location = event.locationInWindow
+        onPan(CGSize(width: location.x - previous.x, height: previous.y - location.y))
+        lastPanLocation = location
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if lastPanLocation != nil {
+            lastPanLocation = nil
+            return
+        }
+        super.mouseUp(with: event)
     }
 
     override func magnify(with event: NSEvent) {
