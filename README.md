@@ -70,6 +70,7 @@ While culling:
 | `p` / `x` | Pick / reject, then advance |
 | `j` / `k`, `←` / `→` | Next / previous, without deciding |
 | `c` | Crop the current image (see [Cropping](#cropping)) |
+| `i` | Flash name, pixel dimensions, and file creation/modification dates for three seconds |
 | `⌘↩` | Finish now — undecided images become rejects |
 | `esc`, `⌘W` | Exit (confirms if anything is still undecided) |
 | `⌘Q` | Quit |

@@ -5,6 +5,8 @@ struct CullingView: View {
     @ObservedObject var appState: AppState
     @StateObject private var cropSession = CropSession()
     @State private var keyMonitor: KeyMonitor?
+    @State private var imageProperties: ImageProperties?
+    @State private var propertiesFlashID = UUID()
 
     var body: some View {
         ZStack {
@@ -28,12 +30,35 @@ struct CullingView: View {
                 cropHint
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let imageProperties {
+                ImagePropertiesView(properties: imageProperties)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: imageProperties != nil)
+        .task(id: propertiesFlashID) {
+            guard imageProperties != nil else { return }
+            do {
+                try await Task.sleep(for: .seconds(3))
+            } catch {
+                return
+            }
+            imageProperties = nil
+        }
+        .onChange(of: appState.currentItem?.id) { _, _ in
+            dismissImageProperties()
+        }
+        .onChange(of: appState.isCropping) { _, _ in
+            dismissImageProperties()
+        }
         .onAppear {
             keyMonitor = KeyMonitor { [appState] event in
                 handleKeyDown(event, appState: appState)
             }
         }
         .onDisappear {
+            dismissImageProperties()
             keyMonitor?.stop()
             keyMonitor = nil
         }
@@ -119,6 +144,11 @@ struct CullingView: View {
 
     // MARK: Keyboard
 
+    private func dismissImageProperties() {
+        imageProperties = nil
+        propertiesFlashID = UUID()
+    }
+
     private func handleKeyDown(_ event: NSEvent, appState: AppState) -> Bool {
         if handleCropKeyDown(event, appState: appState) {
             return true
@@ -164,6 +194,13 @@ struct CullingView: View {
         guard let current = appState.currentItem else { return false }
 
         switch characters {
+        case "i":
+            guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else {
+                return false
+            }
+            imageProperties = ImageProperties(item: current, cropRect: appState.cropRects[current.id])
+            propertiesFlashID = UUID()
+            return true
         case "p":
             appState.decide(current, .pick)
             return true
