@@ -20,7 +20,7 @@ struct ImageViewerView: View {
     var zoomOffset: CGSize = .zero
 
     @State private var image: NSImage?
-    @State private var loadedURL: URL?
+    @State private var loadID = UUID()
 
     var body: some View {
         GeometryReader { geometry in
@@ -51,18 +51,21 @@ struct ImageViewerView: View {
         .onChange(of: cropRect) { _, _ in
             load(item)
         }
+        .onDisappear { loadID = UUID() }
     }
 
     private func load(_ item: ImageItem?) {
+        let requestID = UUID()
+        loadID = requestID
         guard let item = item else {
             image = nil
-            loadedURL = nil
             return
         }
-        loadedURL = item.url
         let cropRect = self.cropRect
         ThumbnailCache.shared.fullImage(for: item.url) { loaded in
-            guard loadedURL == item.url else { return }
+            // Virtual copies share a URL, and navigating away and back can
+            // leave several requests for that URL in flight.
+            guard loadID == requestID else { return }
             let displayed = loaded?.cropped(to: cropRect)
             image = displayed
             if let size = displayed?.size, size.width > 0, size.height > 0 {

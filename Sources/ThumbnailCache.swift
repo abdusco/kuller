@@ -5,6 +5,8 @@ import Foundation
 /// Async, cached loader for downsampled thumbnails and full-size images.
 /// Uses CGImageSource downsampling so large photos don't get fully decoded
 /// just to render a small strip thumbnail.
+/// Completions always run asynchronously on the main queue, including cache
+/// hits: callers may update SwiftUI state and resize its hosting window.
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
 
@@ -21,7 +23,7 @@ final class ThumbnailCache {
 
     func thumbnail(for url: URL, maxPixelSize: CGFloat = 240, completion: @escaping (NSImage?) -> Void) {
         if let cached = thumbnailCache.object(forKey: url as NSURL) {
-            completion(cached)
+            DispatchQueue.main.async { completion(cached) }
             return
         }
         queue.async {
@@ -37,7 +39,7 @@ final class ThumbnailCache {
 
     func fullImage(for url: URL, maxPixelSize: CGFloat = 4096, completion: @escaping (NSImage?) -> Void) {
         if let cached = fullImageCache.object(forKey: url as NSURL) {
-            completion(cached)
+            DispatchQueue.main.async { completion(cached) }
             return
         }
         queue.async {
@@ -52,11 +54,11 @@ final class ThumbnailCache {
     }
 
     /// Width / height of an image, from metadata only. Cached and answered
-    /// synchronously on repeat calls so the thumbnail strip can lay out
+    /// asynchronously on repeat calls so the thumbnail strip can lay out
     /// variable-height rows without re-reading files while scrolling.
     func aspectRatio(for url: URL, completion: @escaping (CGFloat) -> Void) {
         if let cached = cachedAspectRatio(for: url) {
-            completion(cached)
+            DispatchQueue.main.async { completion(cached) }
             return
         }
         queue.async {
@@ -105,6 +107,9 @@ final class ThumbnailCache {
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            // Finish decoding on this worker rather than deferring it until
+            // AppKit draws the image on the main thread.
+            kCGImageSourceShouldCacheImmediately: true,
         ]
 
         guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {

@@ -100,7 +100,9 @@ func resizeCanvasWindow(toImageSize imageSize: CGSize) {
         width: newSize.width,
         height: newSize.height
     )
-    canvasWindow.setFrame(newFrame, display: true, animate: false)
+    // Let AppKit draw on its next display pass instead of forcing the
+    // hosting view to render synchronously while an image update is applied.
+    canvasWindow.setFrame(newFrame, display: false, animate: false)
 }
 
 /// Scales the image even after one or both window axes reach the screen.
