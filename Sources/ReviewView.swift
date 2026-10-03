@@ -157,8 +157,11 @@ struct ReviewView: View {
             focusedColumn = .picks
         }
         pickCoordinator.onSelectionChanged = { ids in
+            let newlySelected = ids.subtracting(pickSelection)
             pickSelection = ids
             focusedColumn = .picks
+            CroppedImageRenderer.prepare(items: appState.picks.filter { newlySelected.contains($0.id) },
+                                         cropRects: appState.cropRects)
         }
         pickCoordinator.onDropReclassify = { ids in
             appState.setDecision(ids: ids, to: .pick)
@@ -170,8 +173,11 @@ struct ReviewView: View {
             focusedColumn = .rejects
         }
         rejectCoordinator.onSelectionChanged = { ids in
+            let newlySelected = ids.subtracting(rejectSelection)
             rejectSelection = ids
             focusedColumn = .rejects
+            CroppedImageRenderer.prepare(items: appState.rejects.filter { newlySelected.contains($0.id) },
+                                         cropRects: appState.cropRects)
         }
         rejectCoordinator.onDropReclassify = { ids in
             appState.setDecision(ids: ids, to: .reject)

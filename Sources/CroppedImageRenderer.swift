@@ -1,13 +1,13 @@
 import Foundation
 import ImageIO
 
-/// Renders a committed crop to a real file on disk, lazily — only when
-/// something outside the app actually needs bytes (Quick Look, the
-/// pasteboard, drag-to-Finder, export). Thumbnails and the culling preview
+/// Renders a committed crop to a real file on disk when selected in review
+/// or needed outside the app (Quick Look, pasteboard, drag-to-Finder, export).
+/// Thumbnails and the culling preview
 /// stay entirely in-memory (`NSImage.cropped(to:)` in NormalizedRect.swift)
 /// and never touch this.
 enum CroppedImageRenderer {
-    private static let queue = DispatchQueue(label: "kuller.crop-render")
+    private static let queue = DispatchQueue(label: "kuller.crop-render", qos: .userInitiated)
     private static var cache: [UUID: (rect: NormalizedRect, url: URL)] = [:]
 
     private static let tempDirectory: URL = {
@@ -15,6 +15,17 @@ enum CroppedImageRenderer {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }()
+
+    /// Selection warms the same cache used by copy/preview without touching
+    /// the clipboard. Serial execution reuses any render already in flight.
+    static func prepare(items: [ImageItem], cropRects: [UUID: NormalizedRect]) {
+        for item in items {
+            guard let rect = cropRects[item.id], rect != .fullImage else { continue }
+            queue.async {
+                _ = resolveOnQueue(item: item, rect: rect)
+            }
+        }
+    }
 
     /// Resolves the URL that should actually be handed to Quick Look / the
     /// pasteboard / an export copy: `item.url` itself if there's no real

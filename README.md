@@ -88,3 +88,6 @@ files out to Finder or across to the other column:
 | `space` | Quick Look the selection |
 | `⌘A` | Select all in the focused column |
 | `⌘C` | Copy the selection as files |
+
+Selecting cropped copies starts preparing their full-resolution files in the
+background, so previewing, copying, and dragging can reuse them.
