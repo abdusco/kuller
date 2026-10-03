@@ -154,13 +154,17 @@ final class CropOverlayNSView: NSView {
         guard let session, let dragMode else { return }
         let point = convert(event.locationInWindow, from: nil)
         let imageRect = cropImageRect(pinnedSize: session.pinnedImageSize, in: bounds)
+        guard imageRect.width > 0, imageRect.height > 0 else { return }
+        // Keep the pointer's overshoot: it grows the crop back toward the
+        // opposite edge after the dragged side reaches the image boundary.
+        let dragNormalized = CGPoint(x: (point.x - imageRect.minX) / imageRect.width,
+                                     y: (point.y - imageRect.minY) / imageRect.height)
         let ratio = session.normalizedTargetRatio
 
         switch dragMode {
         case .draw(let anchor):
             let a = normalizedPoint(from: anchor, in: imageRect)
-            let b = normalizedPoint(from: point, in: imageRect)
-            session.rect = rectFrom(a, b, ratio: ratio)
+            session.rect = rectFrom(a, dragNormalized, ratio: ratio)
 
         case .move(let startRect, let startPoint):
             let deltaX = (point.x - startPoint.x) / imageRect.width
@@ -172,11 +176,9 @@ final class CropOverlayNSView: NSView {
 
         case .resizeCorner(_, let oppositeView):
             let oppositeNormalized = normalizedPoint(from: oppositeView, in: imageRect)
-            let dragNormalized = normalizedPoint(from: point, in: imageRect)
             session.rect = rectFrom(oppositeNormalized, dragNormalized, ratio: ratio)
 
         case .resizeEdge(let edge, let startRect, _):
-            let dragNormalized = normalizedPoint(from: point, in: imageRect)
             session.rect = resized(startRect, edge: edge, to: dragNormalized, ratio: ratio)
         }
         needsDisplay = true
@@ -187,106 +189,54 @@ final class CropOverlayNSView: NSView {
     }
 
     /// Builds a rect from two normalized corner points, optionally
-    /// constrained to `ratio` (driven off the larger axis delta so the
-    /// result never exceeds either corner's bounds).
+    /// constrained to `ratio`. Grow from the first corner until an edge
+    /// hits the image, then shift the rect to accommodate further growth.
     private func rectFrom(_ a: CGPoint, _ b: CGPoint, ratio: CGFloat?) -> NormalizedRect {
-        var minX = min(a.x, b.x)
-        var maxX = max(a.x, b.x)
-        var minY = min(a.y, b.y)
-        var maxY = max(a.y, b.y)
-
+        var width = min(abs(b.x - a.x), 1)
+        var height = min(abs(b.y - a.y), 1)
         if let ratio {
-            let width = maxX - minX
-            let height = maxY - minY
-            let anchorX = a.x
-            let anchorY = a.y
-            if width / max(height, 0.0001) > ratio {
-                let newHeight = width / ratio
-                if b.y >= anchorY {
-                    maxY = min(anchorY + newHeight, 1)
-                    minY = maxY - newHeight
-                } else {
-                    minY = max(anchorY - newHeight, 0)
-                    maxY = minY + newHeight
-                }
-            } else {
-                let newWidth = height * ratio
-                if b.x >= anchorX {
-                    maxX = min(anchorX + newWidth, 1)
-                    minX = maxX - newWidth
-                } else {
-                    minX = max(anchorX - newWidth, 0)
-                    maxX = minX + newWidth
-                }
-            }
+            width = min(max(abs(b.x - a.x), abs(b.y - a.y) * ratio), 1, ratio)
+            height = min(width / ratio, 1)
         }
-
-        return NormalizedRect(x: minX, y: minY, width: max(maxX - minX, 0), height: max(maxY - minY, 0))
+        let x = b.x >= a.x ? a.x : a.x - width
+        let y = b.y >= a.y ? a.y : a.y - height
+        return NormalizedRect(x: min(max(x, 0), 1 - width),
+                              y: min(max(y, 0), 1 - height),
+                              width: width, height: height)
     }
 
-    /// Single-edge resize: moves only the dragged edge, anchored at the
-    /// opposite edge, clamped to 0...1. When `ratio` is set, the
-    /// perpendicular dimension is derived from it and centered on the
-    /// rect's current center on that axis (shifted, then shrunk only if it
-    /// still can't fit within 0...1 after shifting).
+    /// Single-edge resize with the same overshoot growth as corner drags.
+    /// Keep the opposite edge fixed until the crop must shift to fit.
     private func resized(_ rect: NormalizedRect, edge: Edge, to point: CGPoint, ratio: CGFloat?) -> NormalizedRect {
         var newRect = rect
         switch edge {
         case .left:
-            let newX = min(max(point.x, 0), rect.x + rect.width - 0.01)
-            newRect.width = rect.x + rect.width - newX
-            newRect.x = newX
+            newRect.width = min(max(rect.x + rect.width - point.x, 0.01), 1)
         case .right:
-            let newMaxX = max(min(point.x, 1), rect.x + 0.01)
-            newRect.width = newMaxX - rect.x
+            newRect.width = min(max(point.x - rect.x, 0.01), 1)
         case .bottom:
-            let newY = min(max(point.y, 0), rect.y + rect.height - 0.01)
-            newRect.height = rect.y + rect.height - newY
-            newRect.y = newY
+            newRect.height = min(max(rect.y + rect.height - point.y, 0.01), 1)
         case .top:
-            let newMaxY = max(min(point.y, 1), rect.y + 0.01)
-            newRect.height = newMaxY - rect.y
+            newRect.height = min(max(point.y - rect.y, 0.01), 1)
         }
-
-        guard let ratio else { return newRect }
 
         switch edge {
         case .left, .right:
-            var height = newRect.width / ratio
-            let centerY = rect.y + rect.height / 2
-            var y = centerY - height / 2
-            if y < 0 { y = 0 }
-            if y + height > 1 { y = max(0, 1 - height) }
-            if height > 1 {
-                height = 1
-                y = 0
-                newRect.width = height * ratio
-                if edge == .right { newRect.width = min(newRect.width, 1 - newRect.x) }
-                else {
-                    let anchorX = rect.x + rect.width
-                    newRect.x = max(0, anchorX - newRect.width)
-                }
+            if let ratio {
+                newRect.width = min(newRect.width, ratio)
+                newRect.height = min(newRect.width / ratio, 1)
+                newRect.y = min(max(rect.y + rect.height / 2 - newRect.height / 2, 0), 1 - newRect.height)
             }
-            newRect.y = y
-            newRect.height = height
+            let x = edge == .left ? rect.x + rect.width - newRect.width : rect.x
+            newRect.x = min(max(x, 0), 1 - newRect.width)
         case .top, .bottom:
-            var width = newRect.height * ratio
-            let centerX = rect.x + rect.width / 2
-            var x = centerX - width / 2
-            if x < 0 { x = 0 }
-            if x + width > 1 { x = max(0, 1 - width) }
-            if width > 1 {
-                width = 1
-                x = 0
-                newRect.height = width / ratio
-                if edge == .top { newRect.height = min(newRect.height, 1 - newRect.y) }
-                else {
-                    let anchorY = rect.y + rect.height
-                    newRect.y = max(0, anchorY - newRect.height)
-                }
+            if let ratio {
+                newRect.height = min(newRect.height, 1 / ratio)
+                newRect.width = min(newRect.height * ratio, 1)
+                newRect.x = min(max(rect.x + rect.width / 2 - newRect.width / 2, 0), 1 - newRect.width)
             }
-            newRect.x = x
-            newRect.width = width
+            let y = edge == .bottom ? rect.y + rect.height - newRect.height : rect.y
+            newRect.y = min(max(y, 0), 1 - newRect.height)
         }
         return newRect
     }
