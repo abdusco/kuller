@@ -125,6 +125,13 @@ struct ReviewView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 11)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                focusedColumn = coordinator.kind
+                if let collectionView = coordinator.collectionView {
+                    collectionView.window?.makeFirstResponder(collectionView)
+                }
+            }
 
             ImageGridView(coordinator: coordinator, items: items, cropRects: appState.cropRects)
                 .overlay {
@@ -136,6 +143,7 @@ struct ReviewView: View {
                                 .font(.callout)
                         }
                         .foregroundStyle(.tertiary)
+                        .allowsHitTesting(false)
                     }
                 }
         }
@@ -145,6 +153,9 @@ struct ReviewView: View {
     // MARK: Wiring
 
     private func configureCoordinators() {
+        pickCoordinator.onFocus = {
+            focusedColumn = .picks
+        }
         pickCoordinator.onSelectionChanged = { ids in
             pickSelection = ids
             focusedColumn = .picks
@@ -154,6 +165,9 @@ struct ReviewView: View {
         }
         pickCoordinator.onDeleteVirtualCopy = { item in
             appState.removeVirtualCopy(item)
+        }
+        rejectCoordinator.onFocus = {
+            focusedColumn = .rejects
         }
         rejectCoordinator.onSelectionChanged = { ids in
             rejectSelection = ids

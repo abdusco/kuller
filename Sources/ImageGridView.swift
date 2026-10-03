@@ -192,6 +192,22 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
     }
 }
 
+/// Activate the column even when a click doesn't change its selection.
+final class ReviewCollectionView: NSCollectionView {
+    var onFocus: () -> Void = {}
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocus() }
+        return accepted
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onFocus()
+        super.mouseDown(with: event)
+    }
+}
+
 /// AppKit dataSource/delegate for one review column's collection view.
 /// Owned externally (by the SwiftUI view) so keyboard shortcuts outside the
 /// representable (Cmd+A / Cmd+C) can still reach the live NSCollectionView
@@ -200,6 +216,7 @@ final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollec
     let kind: ReviewColumnKind
     var items: [ImageItem] = []
     var cropRects: [UUID: NormalizedRect] = [:]
+    var onFocus: () -> Void = {}
     var onSelectionChanged: (Set<UUID>) -> Void = { _ in }
     var onDropReclassify: ([UUID]) -> Void = { _ in }
     var onDeleteVirtualCopy: (ImageItem) -> Void = { _ in }
@@ -300,7 +317,10 @@ struct ImageGridView: NSViewRepresentable {
             right: ImageGridMetrics.inset
         )
 
-        let collectionView = NSCollectionView()
+        let collectionView = ReviewCollectionView()
+        collectionView.onFocus = { [weak coordinator = context.coordinator] in
+            coordinator?.onFocus()
+        }
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true
         collectionView.allowsMultipleSelection = true
@@ -327,6 +347,7 @@ struct ImageGridView: NSViewRepresentable {
             collectionView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: scrollView.contentView.trailingAnchor),
             collectionView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
+            collectionView.heightAnchor.constraint(greaterThanOrEqualTo: scrollView.contentView.heightAnchor),
         ])
 
         context.coordinator.collectionView = collectionView
