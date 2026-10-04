@@ -9,6 +9,7 @@ import Quartz
 /// - drag, forwarded to `NSWindow.performDrag` so the window moves under
 ///   AppKit's own native drag loop
 /// - pinch, via `magnify(with:)`'s incremental deltas, to resize the window
+/// - two-finger scroll, to pan the image when it overflows the window
 ///
 /// Doing these in SwiftUI instead is what made moving/resizing glitch: a
 /// DragGesture reports translations in the view's coordinate space, which
@@ -94,6 +95,16 @@ final class HoverTrackingHostingView<Content: View>: NSHostingView<Content> {
             return
         }
         onMagnify(event.magnification)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        guard allowsWindowInteraction(), allowsImagePanning() else {
+            super.scrollWheel(with: event)
+            return
+        }
+        // AppKit supplies deltas with the user's scroll direction already
+        // applied, including momentum after the fingers leave the trackpad.
+        onPan(CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY))
     }
 
     // MARK: Quick Look
