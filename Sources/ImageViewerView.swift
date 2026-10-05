@@ -62,13 +62,24 @@ struct ImageViewerView: View {
             return
         }
         let cropRect = self.cropRect
+        image = ThumbnailCache.shared.cachedThumbnail(for: item.url)?.cropped(to: cropRect)
+        // Both callbacks run on the main queue. A late thumbnail must never
+        // replace the larger preview, even when that preview was cached.
+        var fullImageLoaded = false
+        ThumbnailCache.shared.thumbnail(for: item.url) { loaded in
+            guard loadID == requestID, !fullImageLoaded else { return }
+            image = loaded?.cropped(to: cropRect)
+        }
         ThumbnailCache.shared.fullImage(for: item.url) { loaded in
             // Virtual copies share a URL, and navigating away and back can
             // leave several requests for that URL in flight.
             guard loadID == requestID else { return }
-            let displayed = loaded?.cropped(to: cropRect)
+            guard let loaded else { return }
+            fullImageLoaded = true
+            let displayed = loaded.cropped(to: cropRect)
             image = displayed
-            if let size = displayed?.size, size.width > 0, size.height > 0 {
+            let size = displayed.size
+            if size.width > 0, size.height > 0 {
                 resizeCanvasWindow(toImageSize: size)
             }
         }

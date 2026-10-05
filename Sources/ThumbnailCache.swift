@@ -37,6 +37,10 @@ final class ThumbnailCache {
         }
     }
 
+    func cachedThumbnail(for url: URL) -> NSImage? {
+        thumbnailCache.object(forKey: url as NSURL)
+    }
+
     func fullImage(for url: URL, maxPixelSize: CGFloat = 4096, qos: DispatchQoS = .userInitiated, completion: @escaping (NSImage?) -> Void) {
         if let cached = fullImageCache.object(forKey: url as NSURL) {
             DispatchQueue.main.async { completion(cached) }
