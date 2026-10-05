@@ -18,8 +18,10 @@ struct ImageViewerView: View {
     var cropRect: NormalizedRect?
     var zoomedSize: CGSize?
     var zoomOffset: CGSize = .zero
+    var imageCache: ThumbnailCache = .shared
 
     @State private var image: NSImage?
+    @State private var isThumbnail = false
     @State private var loadID = UUID()
 
     var body: some View {
@@ -33,6 +35,7 @@ struct ImageViewerView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: zoomedSize?.width ?? geometry.size.width,
                            height: zoomedSize?.height ?? geometry.size.height)
+                    .blur(radius: isThumbnail ? 2 : 0, opaque: true)
                     .position(x: geometry.size.width / 2 + zoomOffset.width,
                               y: geometry.size.height / 2 + zoomOffset.height)
             } else {
@@ -59,27 +62,42 @@ struct ImageViewerView: View {
         loadID = requestID
         guard let item = item else {
             image = nil
+            isThumbnail = false
             return
         }
         let cropRect = self.cropRect
-        image = ThumbnailCache.shared.cachedThumbnail(for: item.url)?.cropped(to: cropRect)
+        // Size the window from source metadata before either preview arrives.
+        // Upgrading the pixels must not resize the window or reset a zoom/pan
+        // the user started while looking at the thumbnail.
+        var sizedFromMetadata = false
+        if var size = ThumbnailCache.quickPixelSize(of: item.url), size.width > 0, size.height > 0 {
+            if let cropRect, cropRect.width > 0, cropRect.height > 0 {
+                size.width *= cropRect.width
+                size.height *= cropRect.height
+            }
+            resizeCanvasWindow(toImageSize: size)
+            sizedFromMetadata = true
+        }
+        isThumbnail = true
+        image = imageCache.cachedThumbnail(for: item.url)?.cropped(to: cropRect)
         // Both callbacks run on the main queue. A late thumbnail must never
         // replace the larger preview, even when that preview was cached.
         var fullImageLoaded = false
-        ThumbnailCache.shared.thumbnail(for: item.url) { loaded in
+        imageCache.thumbnail(for: item.url) { loaded in
             guard loadID == requestID, !fullImageLoaded else { return }
             image = loaded?.cropped(to: cropRect)
         }
-        ThumbnailCache.shared.fullImage(for: item.url) { loaded in
+        imageCache.fullImage(for: item.url) { loaded in
             // Virtual copies share a URL, and navigating away and back can
             // leave several requests for that URL in flight.
             guard loadID == requestID else { return }
             guard let loaded else { return }
             fullImageLoaded = true
             let displayed = loaded.cropped(to: cropRect)
+            isThumbnail = false
             image = displayed
             let size = displayed.size
-            if size.width > 0, size.height > 0 {
+            if !sizedFromMetadata, size.width > 0, size.height > 0 {
                 resizeCanvasWindow(toImageSize: size)
             }
         }

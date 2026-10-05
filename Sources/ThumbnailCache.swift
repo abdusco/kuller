@@ -168,6 +168,12 @@ final class ThumbnailCache {
               let height = properties[kCGImagePropertyPixelHeight] as? CGFloat else {
             return nil
         }
+        // Match the orientation transform used by downsample, so window and
+        // strip geometry already agree with the eventual decoded preview.
+        let orientation = properties[kCGImagePropertyOrientation] as? Int ?? 1
+        if (5...8).contains(orientation) {
+            return CGSize(width: height, height: width)
+        }
         return CGSize(width: width, height: height)
     }
 
