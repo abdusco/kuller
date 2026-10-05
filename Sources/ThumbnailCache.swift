@@ -13,7 +13,19 @@ final class ThumbnailCache {
     private let thumbnailCache = NSCache<NSString, NSImage>()
     private let fullImageCache = NSCache<NSString, NSImage>()
     private let queue = DispatchQueue(label: "kuller.thumbnail-cache", attributes: .concurrent)
-    private var pendingImages: [String: [(NSImage?) -> Void]] = [:]
+    private let decodeQueue = OperationQueue()
+    private final class PendingImage {
+        let id = UUID()
+        let url: URL
+        let operation = BlockOperation()
+        var completions: [(NSImage?) -> Void]
+
+        init(url: URL, completion: @escaping (NSImage?) -> Void) {
+            self.url = url
+            self.completions = [completion]
+        }
+    }
+    private var pendingImages: [String: PendingImage] = [:]
     private let imageLock = NSLock()
     private let decoder: (URL, CGFloat) -> NSImage?
     private var aspectRatios: [URL: CGFloat] = [:]
@@ -21,6 +33,8 @@ final class ThumbnailCache {
 
     init(decoder: ((URL, CGFloat) -> NSImage?)? = nil) {
         self.decoder = decoder ?? Self.downsample
+        decodeQueue.name = "kuller.image-decode"
+        decodeQueue.maxConcurrentOperationCount = 2
         thumbnailCache.countLimit = 2000
         fullImageCache.countLimit = 4
     }
@@ -50,36 +64,67 @@ final class ThumbnailCache {
             DispatchQueue.main.async { completion(cached) }
             return
         }
-        if pendingImages[key] != nil {
-            pendingImages[key]?.append(completion)
+        if let pending = pendingImages[key] {
+            pending.completions.append(completion)
+            if qos.qosClass == .userInitiated, !pending.operation.isExecuting {
+                pending.operation.qualityOfService = .userInitiated
+                pending.operation.queuePriority = .high
+            }
             imageLock.unlock()
             return
         }
-        pendingImages[key] = [completion]
-        imageLock.unlock()
-        queue.async(qos: qos) {
+        let pending = PendingImage(url: url, completion: completion)
+        let requestID = pending.id
+        pending.operation.qualityOfService = qos.qosClass == .utility ? .utility : .userInitiated
+        pending.operation.queuePriority = qos.qosClass == .utility ? .low : .high
+        pending.operation.addExecutionBlock {
             let image = self.decoder(url, maxPixelSize)
             self.imageLock.lock()
+            // A cancelled prefetch may already have entered its decoder.
+            // It must not complete a newer request for the same source.
+            guard self.pendingImages[key]?.id == requestID else {
+                self.imageLock.unlock()
+                return
+            }
             if let image = image {
                 cache.setObject(image, forKey: key as NSString)
             }
-            let completions = self.pendingImages.removeValue(forKey: key) ?? []
+            let completions = self.pendingImages.removeValue(forKey: key)?.completions ?? []
             self.imageLock.unlock()
             DispatchQueue.main.async {
                 for completion in completions { completion(image) }
             }
         }
+        pendingImages[key] = pending
+        imageLock.unlock()
+        decodeQueue.addOperation(pending.operation)
     }
 
     /// Warm the two following images and one preceding image. Virtual
     /// copies share their source URL, so each source is requested only once.
     func prefetch(items: [ImageItem], currentIndex: Int) {
-        guard items.indices.contains(currentIndex) else { return }
-        var urls: Set<URL> = [items[currentIndex].url]
+        var urls = Set<URL>()
+        var neighbors: [URL] = []
+        if items.indices.contains(currentIndex) { urls.insert(items[currentIndex].url) }
         for index in [currentIndex + 1, currentIndex + 2, currentIndex - 1] {
-            guard items.indices.contains(index), urls.insert(items[index].url).inserted else { continue }
-            fullImage(for: items[index].url, qos: .utility) { _ in }
+            guard items.indices.contains(currentIndex), items.indices.contains(index),
+                  urls.insert(items[index].url).inserted else { continue }
+            neighbors.append(items[index].url)
         }
+        imageLock.lock()
+        let obsolete = pendingImages.filter { _, pending in
+            pending.operation.qualityOfService == .utility && !pending.operation.isExecuting
+                && !urls.contains(pending.url)
+        }.map(\.key)
+        for key in obsolete {
+            pendingImages.removeValue(forKey: key)?.operation.cancel()
+        }
+        imageLock.unlock()
+        for url in neighbors { fullImage(for: url, qos: .utility) { _ in } }
+    }
+
+    func cancelPrefetching() {
+        prefetch(items: [], currentIndex: 0)
     }
 
     /// Width / height of an image, from metadata only. Cached and answered

@@ -9,6 +9,7 @@ struct RootView: View {
             .onChange(of: appState.currentIndex) { _, _ in prefetch() }
             .onChange(of: appState.items) { _, _ in prefetch() }
             .onChange(of: appState.phase) { _, _ in prefetch() }
+            .onDisappear { ThumbnailCache.shared.cancelPrefetching() }
     }
 
     @ViewBuilder
@@ -26,7 +27,10 @@ struct RootView: View {
     }
 
     private func prefetch() {
-        guard appState.phase == .culling else { return }
+        guard appState.phase == .culling else {
+            ThumbnailCache.shared.cancelPrefetching()
+            return
+        }
         ThumbnailCache.shared.prefetch(items: appState.items, currentIndex: appState.currentIndex)
     }
 }

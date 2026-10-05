@@ -137,7 +137,63 @@ enum ThumbnailCacheTests {
             precondition(decodes == 1, "\(name): duplicate requests decoded \(decodes) times")
             lock.unlock()
         }
-        print("Passed \(cases.count * 3 + sizes.count + sharingCases.count) thumbnail cache cases")
+        let started = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let lock = NSLock()
+        var decodedURLs: [URL] = []
+        var active = 0
+        var peak = 0
+        let cache = ThumbnailCache { url, _ in
+            lock.lock()
+            decodedURLs.append(url)
+            active += 1
+            peak = max(peak, active)
+            lock.unlock()
+            started.signal()
+            precondition(release.wait(timeout: .now() + 5) == .success)
+            lock.lock()
+            active -= 1
+            lock.unlock()
+            return NSImage(cgImage: bitmap.cgImage!, size: CGSize(width: 32, height: 16))
+        }
+        var callbacks = 0
+        for name in ["blocker-1", "blocker-2"] {
+            cache.fullImage(for: directory.appendingPathComponent(name)) { _ in callbacks += 1 }
+        }
+        for _ in 0..<2 {
+            precondition(started.wait(timeout: .now() + 5) == .success)
+        }
+        let neighbors = (0..<5).map { ImageItem(url: directory.appendingPathComponent("neighbor-\($0)")) }
+        cache.prefetch(items: neighbors, currentIndex: 0)
+        // Moving ahead drops neighbor 1, retains neighbor 2, and queues 4.
+        cache.prefetch(items: neighbors, currentIndex: 3)
+        cache.fullImage(for: neighbors[2].url) { _ in callbacks += 1 }
+        precondition(started.wait(timeout: .now() + 0.1) == .timedOut,
+                     "More than two decodes ran concurrently")
+        release.signal()
+        precondition(started.wait(timeout: .now() + 5) == .success)
+        lock.lock()
+        precondition(decodedURLs[2] == neighbors[2].url, "Current preview did not overtake prefetching")
+        lock.unlock()
+        for _ in 0..<3 { release.signal() }
+        wait {
+            lock.lock()
+            let finished = decodedURLs.count == 4 && active == 0
+            lock.unlock()
+            return finished && callbacks == 3
+        }
+        lock.lock()
+        precondition(peak == 2)
+        precondition(Set(decodedURLs.suffix(2)) == Set([neighbors[2].url, neighbors[4].url]),
+                     "Obsolete prefetch was decoded")
+        lock.unlock()
+        // Cancellation must remove the request registration, allowing a
+        // later foreground request for that URL to load normally.
+        cache.fullImage(for: neighbors[1].url) { _ in callbacks += 1 }
+        precondition(started.wait(timeout: .now() + 5) == .success)
+        release.signal()
+        wait { callbacks == 4 }
+        print("Passed \(cases.count * 3 + sizes.count + sharingCases.count + 1) thumbnail cache cases")
     }
 
     private static func wait(until completed: () -> Bool) {
