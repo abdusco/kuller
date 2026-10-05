@@ -21,7 +21,6 @@ struct ImageViewerView: View {
     var imageCache: ThumbnailCache = .shared
 
     @State private var image: NSImage?
-    @State private var isThumbnail = false
     @State private var loadID = UUID()
 
     var body: some View {
@@ -35,7 +34,6 @@ struct ImageViewerView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: zoomedSize?.width ?? geometry.size.width,
                            height: zoomedSize?.height ?? geometry.size.height)
-                    .blur(radius: isThumbnail ? 2 : 0, opaque: true)
                     .position(x: geometry.size.width / 2 + zoomOffset.width,
                               y: geometry.size.height / 2 + zoomOffset.height)
             } else {
@@ -62,7 +60,6 @@ struct ImageViewerView: View {
         loadID = requestID
         guard let item = item else {
             image = nil
-            isThumbnail = false
             return
         }
         let cropRect = self.cropRect
@@ -78,7 +75,6 @@ struct ImageViewerView: View {
             resizeCanvasWindow(toImageSize: size)
             sizedFromMetadata = true
         }
-        isThumbnail = true
         image = imageCache.cachedThumbnail(for: item.url)?.cropped(to: cropRect)
         // Both callbacks run on the main queue. A late thumbnail must never
         // replace the larger preview, even when that preview was cached.
@@ -94,7 +90,6 @@ struct ImageViewerView: View {
             guard let loaded else { return }
             fullImageLoaded = true
             let displayed = loaded.cropped(to: cropRect)
-            isThumbnail = false
             image = displayed
             let size = displayed.size
             if !sizedFromMetadata, size.width > 0, size.height > 0 {
