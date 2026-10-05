@@ -10,49 +10,63 @@ import Foundation
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
 
-    private let thumbnailCache = NSCache<NSURL, NSImage>()
-    private let fullImageCache = NSCache<NSURL, NSImage>()
+    private let thumbnailCache = NSCache<NSString, NSImage>()
+    private let fullImageCache = NSCache<NSString, NSImage>()
     private let queue = DispatchQueue(label: "kuller.thumbnail-cache", attributes: .concurrent)
+    private var pendingImages: [String: [(NSImage?) -> Void]] = [:]
+    private let imageLock = NSLock()
+    private let decoder: (URL, CGFloat) -> NSImage?
     private var aspectRatios: [URL: CGFloat] = [:]
     private let aspectLock = NSLock()
 
-    private init() {
+    init(decoder: ((URL, CGFloat) -> NSImage?)? = nil) {
+        self.decoder = decoder ?? Self.downsample
         thumbnailCache.countLimit = 2000
         fullImageCache.countLimit = 4
     }
 
     func thumbnail(for url: URL, completion: @escaping (NSImage?) -> Void) {
-        if let cached = thumbnailCache.object(forKey: url as NSURL) {
-            DispatchQueue.main.async { completion(cached) }
-            return
-        }
-        queue.async {
-            let image = Self.downsample(url: url, maxPixelSize: 320)
-            if let image = image {
-                self.thumbnailCache.setObject(image, forKey: url as NSURL)
-            }
-            DispatchQueue.main.async {
-                completion(image)
-            }
-        }
+        loadImage(for: url, maxPixelSize: 320, key: "thumbnail:\(url.absoluteString)",
+                  cache: thumbnailCache, qos: .userInitiated, completion: completion)
     }
 
     func cachedThumbnail(for url: URL) -> NSImage? {
-        thumbnailCache.object(forKey: url as NSURL)
+        thumbnailCache.object(forKey: "thumbnail:\(url.absoluteString)" as NSString)
     }
 
     func fullImage(for url: URL, maxPixelSize: CGFloat = 4096, qos: DispatchQoS = .userInitiated, completion: @escaping (NSImage?) -> Void) {
-        if let cached = fullImageCache.object(forKey: url as NSURL) {
+        loadImage(for: url, maxPixelSize: maxPixelSize, key: "preview:\(maxPixelSize):\(url.absoluteString)",
+                  cache: fullImageCache, qos: qos, completion: completion)
+    }
+
+    private func loadImage(for url: URL, maxPixelSize: CGFloat, key: String,
+                           cache: NSCache<NSString, NSImage>, qos: DispatchQoS,
+                           completion: @escaping (NSImage?) -> Void) {
+        // Cache lookup and registration share a lock so a decode finishing
+        // between them cannot cause a second decode of the same request.
+        imageLock.lock()
+        if let cached = cache.object(forKey: key as NSString) {
+            imageLock.unlock()
             DispatchQueue.main.async { completion(cached) }
             return
         }
+        if pendingImages[key] != nil {
+            pendingImages[key]?.append(completion)
+            imageLock.unlock()
+            return
+        }
+        pendingImages[key] = [completion]
+        imageLock.unlock()
         queue.async(qos: qos) {
-            let image = Self.downsample(url: url, maxPixelSize: maxPixelSize)
+            let image = self.decoder(url, maxPixelSize)
+            self.imageLock.lock()
             if let image = image {
-                self.fullImageCache.setObject(image, forKey: url as NSURL)
+                cache.setObject(image, forKey: key as NSString)
             }
+            let completions = self.pendingImages.removeValue(forKey: key) ?? []
+            self.imageLock.unlock()
             DispatchQueue.main.async {
-                completion(image)
+                for completion in completions { completion(image) }
             }
         }
     }
