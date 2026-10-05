@@ -21,13 +21,13 @@ final class ThumbnailCache {
         fullImageCache.countLimit = 4
     }
 
-    func thumbnail(for url: URL, maxPixelSize: CGFloat = 240, completion: @escaping (NSImage?) -> Void) {
+    func thumbnail(for url: URL, completion: @escaping (NSImage?) -> Void) {
         if let cached = thumbnailCache.object(forKey: url as NSURL) {
             DispatchQueue.main.async { completion(cached) }
             return
         }
         queue.async {
-            let image = Self.downsample(url: url, maxPixelSize: maxPixelSize)
+            let image = Self.downsample(url: url, maxPixelSize: 320)
             if let image = image {
                 self.thumbnailCache.setObject(image, forKey: url as NSURL)
             }

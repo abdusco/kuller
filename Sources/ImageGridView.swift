@@ -181,7 +181,7 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
         self.onDelete = onDelete
         cropBadge.isHidden = !item.isVirtualCopy
         deleteButton.isHidden = !item.isVirtualCopy
-        ThumbnailCache.shared.thumbnail(for: item.url, maxPixelSize: 320) { [weak self] loaded in
+        ThumbnailCache.shared.thumbnail(for: item.url) { [weak self] loaded in
             guard self?.currentURL == item.url else { return }
             self?.thumbImageView.image = loaded?.cropped(to: cropRect)
         }
