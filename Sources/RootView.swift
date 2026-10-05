@@ -4,6 +4,15 @@ struct RootView: View {
     @ObservedObject var appState: AppState
 
     var body: some View {
+        content
+            .onAppear { prefetch() }
+            .onChange(of: appState.currentIndex) { _, _ in prefetch() }
+            .onChange(of: appState.items) { _, _ in prefetch() }
+            .onChange(of: appState.phase) { _, _ in prefetch() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch appState.phase {
         case .culling:
             // The image fills the window edge to edge, including the area
@@ -14,5 +23,10 @@ struct RootView: View {
             // Review keeps a normal title bar with its content below it.
             ReviewView(appState: appState)
         }
+    }
+
+    private func prefetch() {
+        guard appState.phase == .culling else { return }
+        ThumbnailCache.shared.prefetch(items: appState.items, currentIndex: appState.currentIndex)
     }
 }

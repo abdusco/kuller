@@ -37,12 +37,12 @@ final class ThumbnailCache {
         }
     }
 
-    func fullImage(for url: URL, maxPixelSize: CGFloat = 4096, completion: @escaping (NSImage?) -> Void) {
+    func fullImage(for url: URL, maxPixelSize: CGFloat = 4096, qos: DispatchQoS = .userInitiated, completion: @escaping (NSImage?) -> Void) {
         if let cached = fullImageCache.object(forKey: url as NSURL) {
             DispatchQueue.main.async { completion(cached) }
             return
         }
-        queue.async {
+        queue.async(qos: qos) {
             let image = Self.downsample(url: url, maxPixelSize: maxPixelSize)
             if let image = image {
                 self.fullImageCache.setObject(image, forKey: url as NSURL)
@@ -50,6 +50,17 @@ final class ThumbnailCache {
             DispatchQueue.main.async {
                 completion(image)
             }
+        }
+    }
+
+    /// Warm the two following images and one preceding image. Virtual
+    /// copies share their source URL, so each source is requested only once.
+    func prefetch(items: [ImageItem], currentIndex: Int) {
+        guard items.indices.contains(currentIndex) else { return }
+        var urls: Set<URL> = [items[currentIndex].url]
+        for index in [currentIndex + 1, currentIndex + 2, currentIndex - 1] {
+            guard items.indices.contains(index), urls.insert(items[index].url).inserted else { continue }
+            fullImage(for: items[index].url, qos: .utility) { _ in }
         }
     }
 
