@@ -59,6 +59,7 @@ actually leave the app — thumbnails, Quick Look, `⌘C`, drag-to-Finder, and
 | --- | --- |
 | `c` | Enter crop mode on the current image |
 | drag corner / edge | Resize the crop area |
+| `⌥` + drag corner / edge | Resize symmetrically around the crop area's center |
 | drag inside image | Start a new crop area |
 | `⌥+` / `⌥-` | Cycle aspect ratio |
 | `⌥1`-`⌥9`, `⌥0` | Jump to a specific ratio, or Free |

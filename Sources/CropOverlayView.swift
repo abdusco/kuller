@@ -32,7 +32,7 @@ final class CropOverlayNSView: NSView {
 
     private enum DragMode {
         case move(startRect: NormalizedRect, startPoint: CGPoint)
-        case resizeCorner(corner: Corner, opposite: CGPoint)
+        case resizeCorner(corner: Corner, opposite: CGPoint, startRect: NormalizedRect)
         case resizeEdge(edge: Edge, startRect: NormalizedRect, startPoint: CGPoint)
         case draw(anchor: CGPoint)
     }
@@ -119,7 +119,7 @@ final class CropOverlayNSView: NSView {
             let center = handleCenter(for: corner, in: cropRectInView)
             if hitTest(point, center: center) {
                 let opposite = oppositeCorner(of: corner, in: cropRectInView)
-                dragMode = .resizeCorner(corner: corner, opposite: opposite)
+                dragMode = .resizeCorner(corner: corner, opposite: opposite, startRect: rect)
                 return
             }
         }
@@ -174,18 +174,67 @@ final class CropOverlayNSView: NSView {
             newRect.y = min(max(startRect.y + deltaY, 0), 1 - startRect.height)
             session.rect = newRect
 
-        case .resizeCorner(_, let oppositeView):
-            let oppositeNormalized = normalizedPoint(from: oppositeView, in: imageRect)
-            session.rect = rectFrom(oppositeNormalized, dragNormalized, ratio: ratio)
+        case .resizeCorner(_, let oppositeView, let startRect):
+            if event.modifierFlags.contains(.option) {
+                let center = CGPoint(x: startRect.x + startRect.width / 2,
+                                     y: startRect.y + startRect.height / 2)
+                session.rect = centeredResize(startRect,
+                                              width: 2 * abs(dragNormalized.x - center.x),
+                                              height: 2 * abs(dragNormalized.y - center.y), ratio: ratio)
+            } else {
+                let oppositeNormalized = normalizedPoint(from: oppositeView, in: imageRect)
+                session.rect = rectFrom(oppositeNormalized, dragNormalized, ratio: ratio)
+            }
 
         case .resizeEdge(let edge, let startRect, _):
-            session.rect = resized(startRect, edge: edge, to: dragNormalized, ratio: ratio)
+            if event.modifierFlags.contains(.option) {
+                let center = CGPoint(x: startRect.x + startRect.width / 2,
+                                     y: startRect.y + startRect.height / 2)
+                var width = startRect.width
+                var height = startRect.height
+                switch edge {
+                case .left: width = max(2 * (center.x - dragNormalized.x), 0.01)
+                case .right: width = max(2 * (dragNormalized.x - center.x), 0.01)
+                case .bottom: height = max(2 * (center.y - dragNormalized.y), 0.01)
+                case .top: height = max(2 * (dragNormalized.y - center.y), 0.01)
+                }
+                if let ratio {
+                    switch edge {
+                    case .left, .right: height = width / ratio
+                    case .top, .bottom: width = height * ratio
+                    }
+                }
+                session.rect = centeredResize(startRect, width: width, height: height, ratio: ratio)
+            } else {
+                session.rect = resized(startRect, edge: edge, to: dragNormalized, ratio: ratio)
+            }
         }
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
         dragMode = nil
+    }
+
+    /// Mirror the dragged handle around the original center. Stop at the
+    /// nearest image boundary so the center stays fixed even on overshoot.
+    private func centeredResize(_ rect: NormalizedRect, width: CGFloat, height: CGFloat,
+                                ratio: CGFloat?) -> NormalizedRect {
+        let centerX = rect.x + rect.width / 2
+        let centerY = rect.y + rect.height / 2
+        let maxWidth = 2 * min(centerX, 1 - centerX)
+        let maxHeight = 2 * min(centerY, 1 - centerY)
+        var width = width
+        var height = height
+        if let ratio {
+            width = min(max(width, height * ratio, 0.01), maxWidth, maxHeight * ratio)
+            height = width / ratio
+        } else {
+            width = min(max(width, 0.01), maxWidth)
+            height = min(max(height, 0.01), maxHeight)
+        }
+        return NormalizedRect(x: centerX - width / 2, y: centerY - height / 2,
+                              width: width, height: height)
     }
 
     /// Builds a rect from two normalized corner points, optionally
