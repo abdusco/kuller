@@ -114,7 +114,7 @@ final class AppPreferences: ObservableObject {
     @Published var cropPresets: [CropAspectRatio] { didSet { save(cropPresets, key: "cropPresets") } }
     @Published var shortcuts: [String: [KeyShortcut]] { didSet { save(shortcuts, key: "shortcuts") } }
 
-    init(defaults: UserDefaults = UserDefaults(suiteName: AppIdentity.bundleID)!) {
+    init(defaults: UserDefaults = AppIdentity.preferences) {
         self.defaults = defaults
         let saved = defaults.data(forKey: "cropPresets")
             .flatMap { try? JSONDecoder().decode([CropAspectRatio].self, from: $0) }
@@ -166,6 +166,16 @@ final class AppPreferences: ObservableObject {
     func reset() {
         cropPresets = CropAspectRatio.allCases
         shortcuts = [:]
+    }
+
+    func restoreBindings(for action: ShortcutAction) -> String? {
+        for other in ShortcutAction.allCases where other != action && !other.contexts.isDisjoint(with: action.contexts) {
+            if action.defaults.contains(where: { candidate in bindings(for: other).contains { $0.sameKey(as: candidate) } }) {
+                return "A default shortcut is already used by \(other.title). Clear that binding first."
+            }
+        }
+        shortcuts.removeValue(forKey: action.rawValue)
+        return nil
     }
 
     private func save<T: Encodable>(_ value: T, key: String) {

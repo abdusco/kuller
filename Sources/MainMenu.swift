@@ -50,7 +50,8 @@ func installMainMenu(appName: String = "kuller") {
     let windowMenuItem = NSMenuItem()
     mainMenu.addItem(windowMenuItem)
     let windowMenu = NSMenu(title: "Window")
-    windowMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+    let closeWindow = windowMenu.addItem(withTitle: "Close Window", action: #selector(AppDelegate.closeWindow(_:)), keyEquivalent: "w")
+    closeWindow.target = NSApp.delegate
     windowMenuItem.submenu = windowMenu
 
     NSApp.mainMenu = mainMenu
