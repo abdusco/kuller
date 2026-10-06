@@ -1,4 +1,4 @@
-<img width="231" height="150" alt="kuller" src="docs/logo.svg" />
+<img width="150" height="150" alt="kuller logo" src="docs/logo.svg" />
 
 # kuller
 

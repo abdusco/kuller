@@ -12,6 +12,9 @@ let copyPicksToURL = cliResult.copyPicksTo
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
+if let appIcon = KullerBranding.appIcon {
+    app.applicationIconImage = appIcon
+}
 
 let delegate = AppDelegate()
 app.delegate = delegate
