@@ -16,20 +16,29 @@ the window; double-click to reset the image and window to their fitted size.
 ## Build
 
 ```sh
-./build.sh          # -> build/kuller
+./build.sh          # -> build/kuller.app, build/kuller-arm64.zip (on Apple silicon)
 ```
 
 A single `swiftc` invocation, no Xcode project and no package manifest.
 Requires macOS 14+.
 
+Builds include the app icon and an architecture-specific ZIP containing
+`kuller.app`. Releases ship `kuller-arm64.zip` for Apple silicon and
+`kuller-x86_64.zip` for Intel. Unzip and move the app to Applications.
+
 ## Usage
 
+Open `kuller.app` from Finder to choose image files or folders. Canceling the
+picker quits the app. You can also invoke its executable directly:
+
 ```sh
-kuller <path> [path ...]
+/Applications/kuller.app/Contents/MacOS/kuller <path> [path ...]
 ```
 
 Folders are scanned recursively for `jpg`, `jpeg`, `png`, `tiff`, `tif`,
 `gif`, `bmp` and `webp` files.
+
+Local builds also provide `build/kuller` for command-line use.
 
 | Option | |
 | --- | --- |

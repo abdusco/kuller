@@ -3,12 +3,8 @@ import SwiftUI
 import Combine
 
 let arguments = Array(CommandLine.arguments.dropFirst())
-guard let cliResult = CLI.run(arguments: arguments) else {
-    exit(0)
-}
-
-let appState = AppState(items: cliResult.images)
-
+// Handle CLI-only requests before creating windows or initializing settings.
+let cliResult = arguments.isEmpty ? nil : CLI.run(arguments: arguments)
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
 if let appIcon = KullerBranding.appIcon {
@@ -18,6 +14,16 @@ if let appIcon = KullerBranding.appIcon {
 let delegate = AppDelegate()
 app.delegate = delegate
 installMainMenu()
+
+let launchImages: [ImageItem]
+if arguments.isEmpty {
+    guard let images = chooseLaunchImages() else { exit(0) }
+    launchImages = images
+} else {
+    guard let cliResult else { exit(0) }
+    launchImages = cliResult.images
+}
+let appState = AppState(items: launchImages)
 
 let visibleFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1400, height: 900)
 let defaultReviewSize = NSSize(width: 1100, height: 750)

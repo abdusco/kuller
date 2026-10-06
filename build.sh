@@ -47,4 +47,45 @@ swiftc \
 # Stable path for local use, whatever the host architecture is.
 ln -sf "kuller-${ARCH}" build/kuller
 
-echo "Built build/kuller-${ARCH} (version ${VERSION_CLEAN})"
+# A Finder-launchable bundle, with the same executable available for CLI use.
+APP_PATH="build/kuller.app"
+mkdir -p "$APP_PATH/Contents/MacOS" "$APP_PATH/Contents/Resources"
+cp "build/kuller-${ARCH}" "$APP_PATH/Contents/MacOS/kuller"
+cp docs/logo.svg "$APP_PATH/Contents/Resources/logo.svg"
+
+swift -module-cache-path build/module-cache Scripts/GenerateIcon.swift docs/logo.svg build/kuller.iconset
+iconutil -c icns build/kuller.iconset -o "$APP_PATH/Contents/Resources/kuller.icns"
+
+# Info.plist version fields must contain numbers, even for dev builds or
+# release versions that include a commit suffix. The CLI keeps the full label.
+BUNDLE_VERSION="${VERSION_CLEAN%%-*}"
+if [[ ! "$BUNDLE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  BUNDLE_VERSION="0.0.0"
+fi
+BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
+cat > "$APP_PATH/Contents/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>kuller</string>
+  <key>CFBundleDisplayName</key><string>kuller</string>
+  <key>CFBundleIdentifier</key><string>dev.abdus.kuller</string>
+  <key>CFBundleExecutable</key><string>kuller</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>$BUNDLE_VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>CFBundleIconFile</key><string>kuller.icns</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+EOF
+printf 'APPL????' > "$APP_PATH/Contents/PkgInfo"
+# Seal the complete bundle after installing its resources. Release signing
+# can supply a Developer ID identity through the same build entry point.
+codesign --force --sign "${CODESIGN_IDENTITY:--}" "$APP_PATH"
+rm -f "build/kuller-${ARCH}.zip"
+ditto -c -k --norsrc --noextattr --noqtn --keepParent "$APP_PATH" "build/kuller-${ARCH}.zip"
+
+echo "Built $APP_PATH and build/kuller-${ARCH}.zip (version ${VERSION_CLEAN})"
