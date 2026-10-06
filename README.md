@@ -26,7 +26,6 @@ Requires macOS 14+.
 
 ```sh
 kuller <path> [path ...]
-kuller --copy-picks-to ~/Desktop/selects ~/Pictures/shoot
 ```
 
 Folders are scanned recursively for `jpg`, `jpeg`, `png`, `tiff`, `tif`,
@@ -36,7 +35,6 @@ Folders are scanned recursively for `jpg`, `jpeg`, `png`, `tiff`, `tif`,
 | --- | --- |
 | `-h`, `--help` | Show help and exit |
 | `--version` | Show version and exit |
-| `--copy-picks-to <dir>` | On finishing, copy picks to `<dir>` (created if needed) and quit, skipping the review screen |
 
 ## Cropping
 
@@ -52,8 +50,8 @@ Confirming a crop (`↩`) doesn't touch the original file — it inserts a new,
 independent "virtual copy" right below it (named `photo_crop1.jpg`,
 `photo_crop2.jpg`, ...) that can be picked, rejected, Quick Looked, copied, or
 deleted on its own. The crop is applied lazily wherever the copy's bytes
-actually leave the app — thumbnails, Quick Look, `⌘C`, drag-to-Finder, and
-`--copy-picks-to` export all hand out the cropped image, at full resolution.
+actually leave the app — thumbnails, Quick Look, `⌘C`, and drag-to-Finder all
+hand out the cropped image, at full resolution.
 
 | | |
 | --- | --- |

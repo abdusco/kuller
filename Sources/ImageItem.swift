@@ -20,8 +20,7 @@ struct ImageItem: Identifiable, Hashable {
     }
 
     /// `$original_crop#n.$ext` for a virtual copy (e.g. "img1_crop1.jpg"),
-    /// used both for on-screen labels and as the basis for exported/copied
-    /// filenames (see PicksExport.uniqueDestination).
+    /// used for on-screen labels and as the filename of rendered crops.
     var displayName: String {
         guard isVirtualCopy else { return url.lastPathComponent }
         let base = url.deletingPathExtension().lastPathComponent

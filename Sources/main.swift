@@ -8,7 +8,6 @@ guard let cliResult = CLI.run(arguments: arguments) else {
 }
 
 let appState = AppState(items: cliResult.images)
-let copyPicksToURL = cliResult.copyPicksTo
 
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
@@ -345,8 +344,6 @@ appState.$isCropping
     .store(in: &cancellables)
 
 // The sidebar only makes sense during culling; hide it on the review screen.
-// If --copy-picks-to was given, skip the review screen entirely: copy picks
-// straight to that directory and quit as soon as culling is done.
 appState.$phase
     .sink { newPhase in
         updateCanvasTitle(phase: newPhase, currentItem: appState.currentItem)
@@ -367,10 +364,6 @@ appState.$phase
             case .review:
                 sidebarWindow.orderOut(nil)
                 resizeCanvasWindowForReview()
-                if let destination = copyPicksToURL {
-                    PicksExport.copyPicks(appState.picks, cropRects: appState.cropRects, to: destination)
-                    NSApp.terminate(nil)
-                }
             }
         }
     }

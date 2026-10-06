@@ -13,9 +13,6 @@ enum CLIError: Error, CustomStringConvertible {
 
 struct CLIResult {
     let images: [ImageItem]
-    /// If set, once culling finishes the app copies picks straight to this
-    /// directory and quits, skipping the review screen entirely.
-    let copyPicksTo: URL?
 }
 
 enum CLI {
@@ -24,7 +21,7 @@ enum CLI {
     static let version = kullerVersion
 
     static let usage = """
-    Usage: kuller [--help] [--version] [--copy-picks-to <dir>] <path> [path ...]
+    Usage: kuller [--help] [--version] <path> [path ...]
 
     Cull and pick images from one or more files or folders.
     Folders are scanned recursively for image files
@@ -33,10 +30,6 @@ enum CLI {
     Options:
       -h, --help              Show this help message and exit
       --version               Show version information and exit
-      --copy-picks-to <dir>   When culling finishes, copy picks straight to
-                               <dir> (created if needed) and quit, instead of
-                               showing the review screen.
-
     Keyboard shortcuts (in app):
       p          Pick the current image and advance
       x          Reject the current image and advance
@@ -55,7 +48,7 @@ enum CLI {
 
     /// Parses CommandLine.arguments (excluding the executable name) and either
     /// handles --help/--version directly (returning nil to signal "exit now"),
-    /// or returns the resolved list of images to cull plus any options.
+    /// or returns the resolved list of images to cull.
     static func run(arguments: [String]) -> CLIResult? {
         if arguments.isEmpty {
             FileHandle.standardError.write(Data((usage + "\n\nerror: no paths given\n").utf8))
@@ -72,20 +65,7 @@ enum CLI {
             exit(0)
         }
 
-        var remaining = arguments
-        var copyPicksTo: URL?
-
-        if let flagIndex = remaining.firstIndex(of: "--copy-picks-to") {
-            let valueIndex = flagIndex + 1
-            guard remaining.indices.contains(valueIndex) else {
-                FileHandle.standardError.write(Data("error: --copy-picks-to requires a directory path\n".utf8))
-                exit(1)
-            }
-            let path = remaining[valueIndex]
-            copyPicksTo = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
-            remaining.remove(at: valueIndex)
-            remaining.remove(at: flagIndex)
-        }
+        let remaining = arguments
 
         if remaining.isEmpty {
             FileHandle.standardError.write(Data((usage + "\n\nerror: no paths given\n").utf8))
@@ -98,7 +78,7 @@ enum CLI {
                 FileHandle.standardError.write(Data("error: no images found\n".utf8))
                 exit(1)
             }
-            return CLIResult(images: images, copyPicksTo: copyPicksTo)
+            return CLIResult(images: images)
         } catch {
             FileHandle.standardError.write(Data("error: \(error)\n".utf8))
             exit(1)
