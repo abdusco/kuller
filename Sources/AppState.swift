@@ -31,14 +31,13 @@ final class AppState: ObservableObject {
     }
 
     func decide(_ item: ImageItem, _ decision: Decision) {
-        // Only auto-advance to review when this decision resolved the last
-        // still-undecided image. Testing decisions.count alone would bounce
-        // straight back to review after returning to culling from it, since
-        // submitting assigns a decision to every image.
+        // Only finishing an undecided original auto-advances to review.
+        // Picking/rejecting a new crop should leave the user in culling,
+        // even if it was the only undecided item after returning from review.
         let wasUndecided = decisions[item.id] == nil
         decisions[item.id] = decision
         advance()
-        if wasUndecided, decisions.count == items.count {
+        if wasUndecided, !item.isVirtualCopy, decisions.count == items.count {
             phase = .review
         }
     }

@@ -130,7 +130,7 @@ struct CullingView: View {
     /// An untouched Return (rect still the full image) on an original is a
     /// no-op — no point in a duplicate identical to its source.
     private func commitCrop() {
-        defer { appState.isCropping = false }
+        defer { finishCropMode() }
         guard let current = appState.currentItem, let rect = cropSession.rect else { return }
         if current.isVirtualCopy {
             appState.cropRects[current.id] = rect
@@ -141,6 +141,14 @@ struct CullingView: View {
     }
 
     private func cancelCrop() {
+        finishCropMode()
+    }
+
+    private func finishCropMode() {
+        // Restore the window while the image is still pinned to its crop
+        // size. Releasing the pin first lets it fill the screen-sized window
+        // before the deferred isCropping subscriber restores the frame.
+        exitCropWindowMode()
         appState.isCropping = false
     }
 

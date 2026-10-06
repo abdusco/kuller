@@ -182,7 +182,9 @@ func enterCropWindowMode() {
 func exitCropWindowMode() {
     guard let saved = canvasFrameBeforeCrop else { return }
     canvasWindow.styleMask.insert(.resizable)
-    canvasWindow.setFrame(saved, display: true, animate: false)
+    // The crop view is still pinned during this restore. Draw once SwiftUI
+    // has also switched back to the viewer, rather than mid-transition.
+    canvasWindow.setFrame(saved, display: false, animate: false)
     canvasFrameBeforeCrop = nil
     canvasWindow.isMovable = true
     for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
@@ -321,6 +323,7 @@ appState.$isCropping
         // @Published fires in willSet; deferring keeps this consistent with
         // the $phase sink below, for the same reason.
         DispatchQueue.main.async {
+            guard appState.isCropping == cropping else { return }
             if cropping {
                 // The sidebar floats above canvasWindow at the screen's
                 // literal left edge; once cropping makes the canvas cover
