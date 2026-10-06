@@ -87,17 +87,17 @@ final class CropSession: ObservableObject {
     /// on screen. Instead, that first press snaps to whichever named ratio
     /// the current rect already most resembles, and only subsequent presses
     /// actually step forward/backward from there.
-    func cycleAspectRatio(forward: Bool) {
+    func cycleAspectRatio(forward: Bool, presets: [CropAspectRatio] = CropAspectRatio.allCases) {
         if aspectRatio == .free, let current = rect, current.height > 0, pinnedImageSize.height > 0 {
             let realRatio = (current.width * pinnedImageSize.width) / (current.height * pinnedImageSize.height)
-            setAspectRatio(CropSession.nearestAspectRatio(toRealRatio: realRatio, imageAspect: imageAspect))
+            setAspectRatio(CropSession.nearestAspectRatio(toRealRatio: realRatio, imageAspect: imageAspect, presets: presets))
             return
         }
-        setAspectRatio(aspectRatio.cycled(forward: forward))
+        setAspectRatio(aspectRatio.cycled(forward: forward, cases: presets))
     }
 
-    private static func nearestAspectRatio(toRealRatio realRatio: CGFloat, imageAspect: CGFloat) -> CropAspectRatio {
-        CropAspectRatio.allCases
+    private static func nearestAspectRatio(toRealRatio realRatio: CGFloat, imageAspect: CGFloat, presets: [CropAspectRatio]) -> CropAspectRatio {
+        presets
             .filter { $0 != .free }
             .min { a, b in
                 abs((a.widthToHeight(imageAspect: imageAspect) ?? 0) - realRatio)

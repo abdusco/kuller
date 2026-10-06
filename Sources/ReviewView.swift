@@ -3,6 +3,7 @@ import AppKit
 
 struct ReviewView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var preferences = AppPreferences.shared
 
     @State private var pickCoordinator = ImageGridCoordinator(kind: .picks)
     @State private var rejectCoordinator = ImageGridCoordinator(kind: .rejects)
@@ -80,7 +81,7 @@ struct ReviewView: View {
                     .transition(.opacity)
             }
 
-            Text(Self.shortcutHint)
+            Text(shortcutHint)
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
@@ -91,7 +92,9 @@ struct ReviewView: View {
         .animation(.easeInOut(duration: 0.15), value: lastCopyFeedback)
     }
 
-    private static let shortcutHint = "⏎ culls  ·  P / X move  ·  Space previews  ·  ⌘C copies"
+    private var shortcutHint: String {
+        "\(preferences.hint(.openImage)) culls  ·  \(preferences.hint(.pick)) / \(preferences.hint(.reject)) move  ·  \(preferences.hint(.preview)) previews  ·  \(preferences.hint(.copy)) copies"
+    }
 
     private var hairline: some View {
         Rectangle()
@@ -199,43 +202,33 @@ struct ReviewView: View {
             return true
         }
 
-        if event.keyCode == 36 || event.keyCode == 76,
-           event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
+        if preferences.matches(.openImage, event) {
             guard let item = selectedItems().first else { return false }
             openInCulling(item)
             return true
         }
 
-        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
-            return false
+        if preferences.matches(.copy, event) {
+            copySelection()
+            return true
         }
-
-        if event.modifierFlags.contains(.command) {
-            switch characters {
-            case "c":
-                copySelection()
-                return true
-            case "a":
-                selectAllInFocusedColumn()
-                return true
-            default:
-                return false
-            }
+        if preferences.matches(.selectAll, event) {
+            selectAllInFocusedColumn()
+            return true
         }
-
-        switch characters {
-        case "p":
+        if preferences.matches(.pick, event) {
             moveSelection(to: .pick)
             return true
-        case "x":
+        }
+        if preferences.matches(.reject, event) {
             moveSelection(to: .reject)
             return true
-        case " ":
+        }
+        if preferences.matches(.preview, event) {
             previewSelection()
             return true
-        default:
-            return false
         }
+        return false
     }
 
     /// Quick Look, matching Finder: previewing a single image lets the arrow

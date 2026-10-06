@@ -10,6 +10,9 @@ func installMainMenu(appName: String = "kuller") {
     let appMenuItem = NSMenuItem()
     mainMenu.addItem(appMenuItem)
     let appMenu = NSMenu()
+    let settings = appMenu.addItem(withTitle: "Settings…", action: #selector(SettingsWindowController.openSettings(_:)), keyEquivalent: ",")
+    settings.target = SettingsWindowController.shared
+    appMenu.addItem(.separator())
     appMenu.addItem(
         withTitle: "Hide \(appName)",
         action: #selector(NSApplication.hide(_:)),
@@ -43,6 +46,12 @@ func installMainMenu(appName: String = "kuller") {
     editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
     editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
     editMenuItem.submenu = editMenu
+
+    let windowMenuItem = NSMenuItem()
+    mainMenu.addItem(windowMenuItem)
+    let windowMenu = NSMenu(title: "Window")
+    windowMenu.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+    windowMenuItem.submenu = windowMenu
 
     NSApp.mainMenu = mainMenu
 }

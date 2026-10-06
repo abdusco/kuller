@@ -66,6 +66,14 @@ hand out the cropped image, at full resolution.
 
 ## Keys
 
+Open **kuller → Settings…** (`⌘,`) to add, remove, and reorder crop presets
+or record shortcuts for culling, review, and cropping. Multiple bindings per
+action are supported; conflicting bindings in the same screen are rejected.
+Changes apply immediately and persist across restarts and upgrades. Use
+**Restore Defaults** to return to the built-in presets and shortcuts.
+
+The tables below show the default bindings.
+
 While culling:
 
 | | |

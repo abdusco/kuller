@@ -14,6 +14,12 @@ final class KeyMonitor {
         self.handler = handler
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self = self else { return event }
+            // Settings owns its input, including shortcut recording. Also
+            // leave the Settings menu command available during cropping.
+            if NSApp.keyWindow === SettingsWindowController.shared.window
+                || (event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == ",") {
+                return event
+            }
             // Let AppKit deliver keys to modal UI, especially Escape to the
             // exit-confirmation sheet's Cancel button. Otherwise the local
             // shortcut handler could interpret that key as another exit.

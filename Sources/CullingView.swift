@@ -3,6 +3,7 @@ import AppKit
 
 struct CullingView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var preferences = AppPreferences.shared
     @StateObject private var cropSession = CropSession()
     @State private var keyMonitor: KeyMonitor?
     @State private var imageProperties: ImageProperties?
@@ -76,7 +77,7 @@ struct CullingView: View {
     private var cropToolbar: some View {
         HStack(spacing: 12) {
             Menu {
-                ForEach(CropAspectRatio.allCases, id: \.self) { ratio in
+                ForEach(preferences.cropPresets, id: \.self) { ratio in
                     Button {
                         cropSession.setAspectRatio(ratio)
                     } label: {
@@ -107,7 +108,7 @@ struct CullingView: View {
     /// toolbar — doesn't intercept clicks/drags either, same reasoning as
     /// `cropToolbar`.
     private var cropHint: some View {
-        Text("⌥+/‑ or ⌥1-9/0 ratio  ·  ⏎ confirm  ·  esc cancel")
+        Text("\(preferences.hint(.nextRatio)) / \(preferences.hint(.previousRatio)) ratio  ·  \(preferences.hint(.confirmCrop)) confirm  ·  \(preferences.hint(.cancelCrop)) cancel")
             .font(.caption)
             .foregroundStyle(.white.opacity(0.7))
             .padding(.bottom, 16)
@@ -167,108 +168,77 @@ struct CullingView: View {
             return true
         }
 
-        let leftArrow: UInt16 = 123
-        let rightArrow: UInt16 = 124
-        let returnKey: UInt16 = 36
-
-        if event.modifierFlags.contains(.command), event.keyCode == returnKey {
+        if preferences.matches(.submit, event) {
             appState.submit()
             return true
         }
 
-        if event.keyCode == leftArrow {
+        if preferences.matches(.previous, event) {
             appState.goToPrevious()
             return true
         }
 
-        if event.keyCode == rightArrow {
+        if preferences.matches(.next, event) {
             appState.goToNext()
             return true
-        }
-
-        guard let characters = event.charactersIgnoringModifiers?.lowercased() else {
-            return false
-        }
-
-        switch characters {
-        case "j":
-            appState.goToNext()
-            return true
-        case "k":
-            appState.goToPrevious()
-            return true
-        default:
-            break
         }
 
         guard let current = appState.currentItem else { return false }
-
-        switch characters {
-        case "i":
-            guard event.modifierFlags.isDisjoint(with: [.command, .option, .control]) else {
-                return false
-            }
+        if preferences.matches(.info, event) {
             imageProperties = ImageProperties(item: current, cropRect: appState.cropRects[current.id])
             propertiesFlashID = UUID()
             return true
-        case "p":
+        }
+        if preferences.matches(.pick, event) {
             appState.decide(current, .pick)
             return true
-        case "x":
+        }
+        if preferences.matches(.reject, event) {
             appState.decide(current, .reject)
             return true
-        default:
-            return false
         }
+        return false
     }
 
     /// Checked before every other key handler in culling, so an active crop
     /// swallows all input (Esc cancels the crop rather than triggering the
     /// quit-confirmation, arrows/j/k/p/x can't silently abandon it, etc.).
     private func handleCropKeyDown(_ event: NSEvent, appState: AppState) -> Bool {
-        let returnKey: UInt16 = 36
-        let escapeKey: UInt16 = 53
-        let equalsKey: UInt16 = 24
-        let minusKey: UInt16 = 27
-        // Alt+1...Alt+9 pick a ratio directly; Alt+0 sets Free.
-        let digitKeyCodes: [UInt16: Int] = [18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9]
-        let zeroKeyCode: UInt16 = 29
-
         if !appState.isCropping {
-            let noOtherModifiers = event.modifierFlags.isDisjoint(with: [.command, .option, .control])
-            if noOtherModifiers, event.charactersIgnoringModifiers?.lowercased() == "c" {
+            if preferences.matches(.crop, event) {
                 enterCropMode()
                 return true
             }
             return false
         }
 
-        if event.keyCode == returnKey {
+        if preferences.matches(.confirmCrop, event) {
             commitCrop()
             return true
         }
-        if event.keyCode == escapeKey {
+        if preferences.matches(.cancelCrop, event) {
             cancelCrop()
             return true
         }
-        if event.modifierFlags.contains(.option), event.keyCode == equalsKey {
-            cropSession.cycleAspectRatio(forward: true)
+        if preferences.matches(.nextRatio, event) {
+            cropSession.cycleAspectRatio(forward: true, presets: preferences.cropPresets)
             return true
         }
-        if event.modifierFlags.contains(.option), event.keyCode == minusKey {
-            cropSession.cycleAspectRatio(forward: false)
+        if preferences.matches(.previousRatio, event) {
+            cropSession.cycleAspectRatio(forward: false, presets: preferences.cropPresets)
             return true
         }
-        if event.modifierFlags.contains(.option), event.keyCode == zeroKeyCode {
+        if preferences.matches(.freeRatio, event) {
             cropSession.setAspectRatio(.free)
             return true
         }
-        if event.modifierFlags.contains(.option), let digit = digitKeyCodes[event.keyCode] {
-            let shortcuts = CropAspectRatio.digitShortcuts
-            if digit <= shortcuts.count {
-                cropSession.setAspectRatio(shortcuts[digit - 1])
+        for action in ShortcutAction.allCases {
+            if let index = action.presetIndex, preferences.matches(action, event) {
+                if preferences.digitPresets.indices.contains(index) {
+                    cropSession.setAspectRatio(preferences.digitPresets[index])
+                }
+                return true
             }
-            return true
         }
         return true
     }
