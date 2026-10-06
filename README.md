@@ -86,6 +86,7 @@ files out to Finder or across to the other column:
 | | |
 | --- | --- |
 | `p` / `x` | Move the selection to Picks / Rejects |
+| double-click / `↩` | Return to culling at the clicked / first selected image |
 | `space` | Quick Look the selection |
 | `⌘A` | Select all in the focused column |
 | `⌘C` | Copy the selection as files |

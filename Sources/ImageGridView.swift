@@ -195,6 +195,7 @@ final class ThumbnailCollectionViewItem: NSCollectionViewItem {
 /// Activate the column even when a click doesn't change its selection.
 final class ReviewCollectionView: NSCollectionView {
     var onFocus: () -> Void = {}
+    var onOpen: (IndexPath) -> Void = { _ in }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
@@ -204,6 +205,11 @@ final class ReviewCollectionView: NSCollectionView {
 
     override func mouseDown(with event: NSEvent) {
         onFocus()
+        if event.clickCount == 2,
+           let indexPath = indexPathForItem(at: convert(event.locationInWindow, from: nil)) {
+            onOpen(indexPath)
+            return
+        }
         super.mouseDown(with: event)
     }
 }
@@ -220,6 +226,7 @@ final class ImageGridCoordinator: NSObject, NSCollectionViewDataSource, NSCollec
     var onSelectionChanged: (Set<UUID>) -> Void = { _ in }
     var onDropReclassify: ([UUID]) -> Void = { _ in }
     var onDeleteVirtualCopy: (ImageItem) -> Void = { _ in }
+    var onOpen: (ImageItem) -> Void = { _ in }
     weak var collectionView: NSCollectionView?
     private(set) var selectedIDs: Set<UUID> = []
 
@@ -320,6 +327,10 @@ struct ImageGridView: NSViewRepresentable {
         let collectionView = ReviewCollectionView()
         collectionView.onFocus = { [weak coordinator = context.coordinator] in
             coordinator?.onFocus()
+        }
+        collectionView.onOpen = { [weak coordinator = context.coordinator] indexPath in
+            guard let coordinator, coordinator.items.indices.contains(indexPath.item) else { return }
+            coordinator.onOpen(coordinator.items[indexPath.item])
         }
         collectionView.collectionViewLayout = layout
         collectionView.isSelectable = true

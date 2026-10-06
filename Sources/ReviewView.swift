@@ -91,7 +91,7 @@ struct ReviewView: View {
         .animation(.easeInOut(duration: 0.15), value: lastCopyFeedback)
     }
 
-    private static let shortcutHint = "P / X move  ·  Space previews  ·  ⌘C copies"
+    private static let shortcutHint = "⏎ culls  ·  P / X move  ·  Space previews  ·  ⌘C copies"
 
     private var hairline: some View {
         Rectangle()
@@ -153,6 +153,8 @@ struct ReviewView: View {
     // MARK: Wiring
 
     private func configureCoordinators() {
+        pickCoordinator.onOpen = openInCulling
+        rejectCoordinator.onOpen = openInCulling
         pickCoordinator.onFocus = {
             focusedColumn = .picks
         }
@@ -187,8 +189,20 @@ struct ReviewView: View {
         }
     }
 
+    private func openInCulling(_ item: ImageItem) {
+        appState.jumpTo(item)
+        appState.returnToCulling()
+    }
+
     private func handleKeyDown(_ event: NSEvent) -> Bool {
         if handleGlobalShortcuts(event, appState: appState) {
+            return true
+        }
+
+        if event.keyCode == 36 || event.keyCode == 76,
+           event.modifierFlags.isDisjoint(with: [.command, .option, .control]) {
+            guard let item = selectedItems().first else { return false }
+            openInCulling(item)
             return true
         }
 

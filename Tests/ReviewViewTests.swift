@@ -97,7 +97,60 @@ enum ReviewViewTests {
                     .appendingPathComponent(unselected.id.uuidString).path), "Rendered an unselected crop")
             }
         }
-        print("Passed review pane selection, crop preparation, cache reuse, and clipboard preservation")
+        let openingCases: [(String, Int, Int, UInt16?)] = [
+            ("double-click pick", 0, 0, nil),
+            ("double-click rejected crop", 1, 1, nil),
+            ("Return on picked crop", 0, 1, 36),
+            ("Return on reject", 1, 0, 36),
+            ("keypad Enter on pick", 0, 0, 76),
+            ("keypad Enter on rejected crop", 1, 1, 76),
+        ]
+        let savedDecisions = state.decisions
+        let savedCrops = state.cropRects
+        for (name, column, itemIndex, keyCode) in openingCases {
+            state.submit()
+            let target = items[column * 2 + itemIndex]
+            state.jumpTo(items.first { $0.id != target.id }!)
+            grids.forEach { $0.deselectAll(nil) }
+            let grid = grids[column]
+            window.makeFirstResponder(grid)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let indexPath = IndexPath(item: itemIndex, section: 0)
+            if let keyCode {
+                grid.selectItems(at: [indexPath], scrollPosition: [])
+                // Programmatic selection does not send the user-selection delegate callback.
+                grid.delegate?.collectionView?(grid, didSelectItemsAt: [indexPath])
+                let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                            context: nil, characters: keyCode == 36 ? "\r" : "\u{3}",
+                                            charactersIgnoringModifiers: keyCode == 36 ? "\r" : "\u{3}",
+                                            isARepeat: false, keyCode: keyCode)!
+                NSApp.sendEvent(event)
+            } else {
+                // Open the clicked item even when a different thumbnail is selected.
+                grid.selectItems(at: [IndexPath(item: 1 - itemIndex, section: 0)], scrollPosition: [])
+                let frame = grid.layoutAttributesForItem(at: indexPath)!.frame
+                let point = grid.convert(NSPoint(x: frame.midX, y: frame.midY), to: nil)
+                let event = NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                                              modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                              context: nil, eventNumber: 0, clickCount: 2, pressure: 1)!
+                grid.mouseDown(with: event)
+            }
+            precondition(state.phase == .culling, "\(name): did not return to culling")
+            precondition(state.currentItem == target, "\(name): opened the wrong image")
+            precondition(state.decisions == savedDecisions, "\(name): changed decisions")
+            precondition(state.cropRects == savedCrops, "\(name): changed crops")
+        }
+        state.submit()
+        grids.forEach { $0.deselectAll(nil) }
+        window.makeFirstResponder(grids[0])
+        let emptyReturn = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                                          modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber,
+                                          context: nil, characters: "\r", charactersIgnoringModifiers: "\r",
+                                          isARepeat: false, keyCode: 36)!
+        NSApp.sendEvent(emptyReturn)
+        precondition(state.phase == .review, "Return without a selection left review")
+        print("Passed review selection, crop preparation, cache reuse, clipboard preservation, and image opening")
     }
 
     private static func collectionViews(in view: NSView) -> [ReviewCollectionView] {
